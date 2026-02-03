@@ -14,10 +14,14 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS middleware
+# CORS middleware - allow production frontend and local dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ese-frontend-dk65.onrender.com",  # Production frontend
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
