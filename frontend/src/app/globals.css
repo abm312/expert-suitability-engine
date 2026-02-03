@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --font-cabinet: 'Space Grotesk', system-ui, sans-serif;
+  --font-geist-sans: 'Space Grotesk', system-ui, sans-serif;
+  --font-geist-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-gray-100 antialiased;
+    font-family: var(--font-geist-sans);
+  }
+  
+  ::selection {
+    @apply bg-ocean-500/30 text-white;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl;
+  }
+  
+  .glass-card {
+    @apply bg-gradient-to-br from-slate-800/40 to-slate-900/60 backdrop-blur-lg border border-white/10 rounded-xl shadow-2xl;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-ocean-400 via-ocean-300 to-emerald-400 bg-clip-text text-transparent;
+  }
+  
+  .glow-box {
+    box-shadow: 
+      0 0 20px rgba(14, 165, 233, 0.15),
+      0 0 40px rgba(14, 165, 233, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  
+  .score-ring {
+    @apply relative inline-flex items-center justify-center;
+  }
+  
+  .score-ring::before {
+    content: '';
+    @apply absolute inset-0 rounded-full;
+    background: conic-gradient(
+      from 0deg,
+      var(--score-color, #0ea5e9) var(--score-percent, 0%),
+      transparent var(--score-percent, 0%)
+    );
+    mask: radial-gradient(transparent 60%, black 61%);
+    -webkit-mask: radial-gradient(transparent 60%, black 61%);
+  }
+  
+  .btn-primary {
+    @apply px-6 py-3 bg-gradient-to-r from-ocean-500 to-ocean-600 hover:from-ocean-400 hover:to-ocean-500 
+           text-white font-medium rounded-xl shadow-lg shadow-ocean-500/25 
+           transition-all duration-200 hover:shadow-ocean-500/40 hover:-translate-y-0.5
+           active:translate-y-0 active:shadow-ocean-500/20;
+  }
+  
+  .btn-secondary {
+    @apply px-6 py-3 bg-slate-800/80 hover:bg-slate-700/80 
+           text-gray-200 font-medium rounded-xl border border-white/10
+           transition-all duration-200 hover:border-white/20;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 bg-slate-800/50 border border-white/10 rounded-xl
+           text-white placeholder-gray-500 
+           focus:outline-none focus:ring-2 focus:ring-ocean-500/50 focus:border-ocean-500/50
+           transition-all duration-200;
+  }
+  
+  .metric-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+           bg-gradient-to-r from-slate-800/80 to-slate-900/80 border border-white/5;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .animate-delay-100 {
+    animation-delay: 100ms;
+  }
+  
+  .animate-delay-200 {
+    animation-delay: 200ms;
+  }
+  
+  .animate-delay-300 {
+    animation-delay: 300ms;
+  }
+  
+  .animate-delay-400 {
+    animation-delay: 400ms;
+  }
+  
+  .animate-delay-500 {
+    animation-delay: 500ms;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-600;
+}
+
+/* Score progress animation */
+@keyframes scoreProgress {
+  from {
+    --score-percent: 0%;
+  }
+}
+
+.score-animate {
+  animation: scoreProgress 1s ease-out forwards;
+}
+

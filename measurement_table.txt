@@ -1,0 +1,26 @@
+MEASUREMENT RESULTS TABLE
+=========================
+
+Endpoint: /api/v1/health
+Server: uvicorn on port 8000
+
+┌──────────────┬──────────────┬──────────────┬──────────────┬──────────────┐
+│ Concurrency  │ Total Time   │ Requests/sec │ Mean Time    │ Failed       │
+│              │ (seconds)    │              │ (ms)         │ Requests     │
+├──────────────┼──────────────┼──────────────┼──────────────┼──────────────┤
+│ 5            │ 0.188         │ 5,331        │ 0.938        │ 0            │
+│ 10           │ 0.188         │ 5,313        │ 1.882        │ 0            │
+│ 20           │ 0.185         │ 5,399        │ 3.704        │ 0            │
+└──────────────┴──────────────┴──────────────┴──────────────┴──────────────┘
+
+KEY FINDINGS:
+- Consistent performance (~5,300 req/sec) across all concurrency levels
+- Response times under 4ms even with 20 concurrent users
+- Zero failures - 100% success rate
+- No performance degradation with increased concurrency
+
+NEXT STEPS:
+1. Test /creators endpoint (database queries)
+2. Create plots showing trends
+3. Estimate servers needed for 4M users
+4. Test storage requirements
