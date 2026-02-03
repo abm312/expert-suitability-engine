@@ -55,6 +55,90 @@ allow_origins=[
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://ese-backend-61as.onrender.com/api/v1';
 ```
 
+## ⚠️ CRITICAL: Hardcoded Backend URL
+
+### Why is it hardcoded?
+Render's Docker builds don't pass environment variables to the build process. Since Next.js bakes `NEXT_PUBLIC_*` vars into the JavaScript bundle at build time (not runtime), we had to hardcode the production backend URL as a fallback.
+
+### Where is it hardcoded?
+**File**: `frontend/src/lib/api.ts` (line 3)
+```typescript
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://ese-backend-61as.onrender.com/api/v1';
+```
+
+### When do you need to change it?
+
+#### 1. If Backend URL Changes
+If you redeploy the backend and get a new Render URL (e.g., `ese-backend-xyz.onrender.com`):
+
+1. Update `frontend/src/lib/api.ts`:
+```typescript
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://NEW-BACKEND-URL.onrender.com/api/v1';
+```
+
+2. Update CORS in `backend/app/main.py` (if frontend URL also changed):
+```python
+allow_origins=[
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://NEW-FRONTEND-URL.onrender.com",  # Update this
+]
+```
+
+3. Commit and push:
+```bash
+git add .
+git commit -m "Update backend URL"
+git push origin main
+```
+
+4. Wait for Render to auto-deploy both services.
+
+#### 2. If You Want to Use Environment Variables Properly
+To fix this properly (use env vars instead of hardcoding):
+
+1. Modify `frontend/Dockerfile` to accept build args:
+```dockerfile
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Add these lines:
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+ENV NEXT_TELEMETRY_DISABLED 1
+RUN npm run build
+```
+
+2. Update `render.yaml` frontend service:
+```yaml
+- type: web
+  name: ese-frontend
+  runtime: docker
+  dockerfilePath: ./frontend/Dockerfile
+  dockerContext: ./frontend
+  envVars:
+    - key: NEXT_PUBLIC_API_URL
+      value: https://ese-backend-61as.onrender.com/api/v1
+```
+
+3. Remove the hardcoded URL from `api.ts`:
+```typescript
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+```
+
+**Note**: This hasn't been tested yet. The hardcoded approach works fine for now.
+
+### Testing After Changes
+After updating the URL:
+1. Wait for frontend to redeploy
+2. Open https://ese-frontend-dk65.onrender.com
+3. Open browser DevTools → Network tab
+4. Search for something
+5. Verify request goes to the correct backend URL (not localhost)
+
 ## Running Locally
 
 ### Option 1: Frontend Only (connects to production backend)
