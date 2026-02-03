@@ -1,0 +1,53 @@
+databases:
+  - name: ese-db
+    databaseName: ese_db
+    user: ese_user
+    plan: free
+    region: oregon
+    postgresMajorVersion: 15
+
+services:
+  # Backend API
+  - type: web
+    name: ese-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: oregon
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ese-db
+          property: connectionString
+      - key: DATABASE_SYNC_URL
+        fromDatabase:
+          name: ese-db
+          property: connectionString
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DEBUG
+        value: false
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+
+  # Frontend
+  - type: web
+    name: ese-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    region: oregon
+    plan: free
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: ese-backend
+          envVarKey: RENDER_EXTERNAL_URL
+        value: /api/v1
+    buildCommand: npm install && npm run build
+    startCommand: npm start
