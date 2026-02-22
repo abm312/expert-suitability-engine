@@ -13,6 +13,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+# Force rebuild: Ensure greenlet dependency is installed
 
 # CORS middleware - allow production frontend and local dev
 app.add_middleware(
