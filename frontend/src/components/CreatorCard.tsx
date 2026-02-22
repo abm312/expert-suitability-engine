@@ -110,35 +110,37 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
             </div>
 
             {/* Score Breakdown - Visual Bars */}
-            <div className="space-y-2.5 mt-4">
-              {Object.entries(creator.subscores).map(([key, score]) => (
-                <div key={key} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1.5 text-gray-400">
-                      <span>{METRIC_ICONS[key as MetricType]}</span>
-                      <span>{METRIC_LABELS[key as MetricType]}</span>
-                    </span>
-                    <span className={cn("font-semibold", getScoreColor(score))}>
-                      {formatScore(score)}%
-                    </span>
+            <div className="space-y-2.5 mt-4 bg-slate-900/30 rounded-lg p-4 border border-white/5">
+              {Object.entries(creator.subscores).map(([key, score]) => {
+                // Convert score to percentage (0-1 becomes 0-100)
+                const scorePercent = score > 1 ? score : score * 100;
+
+                return (
+                  <div key={key} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5 text-gray-300 font-medium">
+                        <span>{METRIC_ICONS[key as MetricType]}</span>
+                        <span>{METRIC_LABELS[key as MetricType]}</span>
+                      </span>
+                      <span className={cn("font-bold text-sm", getScoreColor(scorePercent))}>
+                        {Math.round(scorePercent)}%
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden border border-white/5">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-all duration-700 ease-out",
+                          scorePercent >= 80 ? "bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-500 shadow-lg shadow-emerald-500/50" :
+                          scorePercent >= 60 ? "bg-gradient-to-r from-blue-500 via-blue-400 to-blue-500 shadow-lg shadow-blue-500/50" :
+                          scorePercent >= 40 ? "bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 shadow-lg shadow-amber-500/50" :
+                          "bg-gradient-to-r from-red-500 via-red-400 to-red-500 shadow-lg shadow-red-500/50"
+                        )}
+                        style={{ width: `${Math.min(100, Math.max(0, scorePercent))}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-500",
-                        score >= 80 ? "bg-gradient-to-r from-emerald-500 to-emerald-400" :
-                        score >= 60 ? "bg-gradient-to-r from-ocean-500 to-ocean-400" :
-                        score >= 40 ? "bg-gradient-to-r from-amber-500 to-amber-400" :
-                        "bg-gradient-to-r from-red-500 to-red-400"
-                      )}
-                      style={{
-                        width: `${score}%`,
-                        animationDelay: `${(key.charCodeAt(0) % 5) * 100}ms`
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Topic Match */}
