@@ -322,9 +322,9 @@ export default function Home() {
       <footer className="border-t border-white/5 mt-20">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
-            <p>Expert Suitability Engine v1.0</p>
+            <p>Expert Suitability Engine</p>
             <div className="flex flex-col md:flex-row items-center gap-4">
-              <p>YouTube Data Only • Public Information • No Scraping</p>
+              <p>YouTube Data Only • Public Information</p>
               <a
                 href="https://docs.google.com/document/d/1fFDbD6vgfRFUJBQ3Ez3t4ZysKnnksopPrCs_aCI82I8/edit?usp=sharing"
                 target="_blank"
