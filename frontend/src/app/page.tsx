@@ -146,8 +146,8 @@ export default function Home() {
             </h2>
 
             <p className="text-gray-400 text-xl mb-8 max-w-2xl mx-auto leading-relaxed">
-              Discover and rank YouTube tech creators for expert network consulting.
-              Advanced analysis of content, credibility, and expertise to find your ideal match.
+              Multi-dimensional weighted scoring algorithm for expert network consulting.
+              Semantic embeddings, quantitative metrics, and real-time data analysis to identify optimal subject matter experts.
             </p>
 
             {/* Simple feature highlights */}
@@ -156,24 +156,24 @@ export default function Home() {
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mb-4">
                   <Database className="w-6 h-6 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Deep Analysis</h3>
-                <p className="text-gray-400 text-sm">Comprehensive scoring across credibility, topic authority, communication, freshness, and growth</p>
+                <h3 className="text-lg font-semibold mb-2">5-Metric Composite Algorithm</h3>
+                <p className="text-gray-400 text-sm">Normalized weighted scoring across credibility, topic authority, communication quality, temporal freshness, and growth trajectory</p>
               </div>
 
               <div className="glass-card p-6 text-left">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center mb-4">
                   <Youtube className="w-6 h-6 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">YouTube Insights</h3>
-                <p className="text-gray-400 text-sm">Real-time analysis of channel metrics, video content, and audience engagement</p>
+                <h3 className="text-lg font-semibold mb-2">YouTube Data API Integration</h3>
+                <p className="text-gray-400 text-sm">Quantitative analysis of channel statistics, content embeddings, transcript NLP, and engagement metrics via YouTube Data API v3</p>
               </div>
 
               <div className="glass-card p-6 text-left">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center mb-4">
                   <Zap className="w-6 h-6 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Instant Rankings</h3>
-                <p className="text-gray-400 text-sm">Get ranked results with detailed explanations in seconds</p>
+                <h3 className="text-lg font-semibold mb-2">Vector-Based Rankings</h3>
+                <p className="text-gray-400 text-sm">Cosine similarity matching with dynamic weight normalization produces ranked results with explainable score breakdowns</p>
               </div>
             </div>
           </div>
