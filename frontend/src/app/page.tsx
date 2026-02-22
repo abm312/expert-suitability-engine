@@ -18,14 +18,14 @@ import {
   DEFAULT_METRICS 
 } from '@/types';
 import { api } from '@/lib/api';
-import { Sparkles, Github, Zap, Youtube, Database, Brain, CheckCircle } from 'lucide-react';
+import { Search, Github, Zap, Youtube, Database, Brain, CheckCircle, TrendingUp } from 'lucide-react';
 
 const PROGRESS_STEPS = {
   embedding: { icon: Brain, label: 'Understanding your search', color: 'text-purple-400' },
   youtube: { icon: Youtube, label: 'Finding creators on YouTube', color: 'text-red-400' },
   populating: { icon: Database, label: 'Adding new creators to database', color: 'text-blue-400' },
   filtering: { icon: Zap, label: 'Applying your filters', color: 'text-orange-400' },
-  scoring: { icon: Sparkles, label: 'Ranking by expertise match', color: 'text-yellow-400' },
+  scoring: { icon: TrendingUp, label: 'Ranking by expertise match', color: 'text-yellow-400' },
   done: { icon: CheckCircle, label: 'Done!', color: 'text-emerald-400' },
 };
 
@@ -93,21 +93,32 @@ export default function Home() {
     }
   }, [metrics, filters]);
 
+  const handleReset = useCallback(() => {
+    setHasSearched(false);
+    setResults(null);
+    setError(null);
+    setIsLoading(false);
+    setProgress({ step: '', details: '' });
+  }, []);
+
   return (
     <div className="min-h-screen">
       {/* Header */}
       <header className="border-b border-white/5 backdrop-blur-xl bg-slate-900/50 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer"
+            >
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-ocean-500 to-ocean-600 flex items-center justify-center shadow-lg shadow-ocean-500/30">
-                <Sparkles className="w-5 h-5 text-white" />
+                <Search className="w-5 h-5 text-white" />
               </div>
-              <div>
+              <div className="text-left">
                 <h1 className="font-bold text-lg tracking-tight">Expert Suitability Engine</h1>
                 <p className="text-xs text-gray-500">YouTube Expert Discovery</p>
               </div>
-            </div>
+            </button>
             <a
               href="https://github.com"
               target="_blank"
@@ -125,7 +136,7 @@ export default function Home() {
         {!hasSearched && (
           <div className="text-center mb-16 animate-fade-in max-w-4xl mx-auto">
             <div className="mb-8 inline-flex items-center gap-2 px-4 py-2 bg-ocean-500/10 border border-ocean-500/20 rounded-full text-ocean-400 text-sm font-medium">
-              <Sparkles className="w-4 h-4" />
+              <Search className="w-4 h-4" />
               Intelligent Expert Discovery
             </div>
 
