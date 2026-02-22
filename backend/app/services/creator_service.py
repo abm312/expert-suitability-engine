@@ -243,47 +243,47 @@ class CreatorService:
             logger.info(f"Step 4: Converting {len(creators)} creators to data format")
             creators_data = []
             for c in creators:
-            creator_dict = {
-                "id": c.id,
-                "channel_id": c.channel_id,
-                "channel_name": c.channel_name,
-                "channel_description": c.channel_description,
-                "total_subscribers": c.total_subscribers,
-                "total_views": c.total_views,
-                "total_videos": c.total_videos,
-                "channel_created_date": c.channel_created_date,
-                "external_links": c.external_links or [],
-                "thumbnail_url": c.thumbnail_url,
-                "videos": [
-                    {
-                        "video_id": v.video_id,
-                        "title": v.title,
-                        "description": v.description,
-                        "published_at": v.published_at,
-                        "duration_seconds": v.duration_seconds,
-                        "views": v.views,
-                        "likes": v.likes,
-                        "comments": v.comments,
-                        "has_captions": v.has_captions,
-                        "thumbnail_url": v.thumbnail_url,
-                        "tags": v.tags or [],
-                        "transcript": {
-                            "text": v.transcript.text if v.transcript else None,
-                            "embedding": list(v.transcript.embedding) if v.transcript and v.transcript.embedding else None,
-                        } if v.transcript else {}
-                    }
-                    for v in c.videos
-                ],
-                "metrics_snapshots": [
-                    {
-                        "date": s.date,
-                        "subscriber_count": s.subscriber_count,
-                        "view_count": s.view_count,
-                        "video_count": s.video_count,
-                    }
-                    for s in c.metrics_snapshots
-                ],
-            }
+                creator_dict = {
+                    "id": c.id,
+                    "channel_id": c.channel_id,
+                    "channel_name": c.channel_name,
+                    "channel_description": c.channel_description,
+                    "total_subscribers": c.total_subscribers,
+                    "total_views": c.total_views,
+                    "total_videos": c.total_videos,
+                    "channel_created_date": c.channel_created_date,
+                    "external_links": c.external_links or [],
+                    "thumbnail_url": c.thumbnail_url,
+                    "videos": [
+                        {
+                            "video_id": v.video_id,
+                            "title": v.title,
+                            "description": v.description,
+                            "published_at": v.published_at,
+                            "duration_seconds": v.duration_seconds,
+                            "views": v.views,
+                            "likes": v.likes,
+                            "comments": v.comments,
+                            "has_captions": v.has_captions,
+                            "thumbnail_url": v.thumbnail_url,
+                            "tags": v.tags or [],
+                            "transcript": {
+                                "text": v.transcript.text if v.transcript else None,
+                                "embedding": list(v.transcript.embedding) if v.transcript and v.transcript.embedding else None,
+                            } if v.transcript else {}
+                        }
+                        for v in c.videos
+                    ],
+                    "metrics_snapshots": [
+                        {
+                            "date": s.date,
+                            "subscriber_count": s.subscriber_count,
+                            "view_count": s.view_count,
+                            "video_count": s.video_count,
+                        }
+                        for s in c.metrics_snapshots
+                    ],
+                }
                 creators_data.append(creator_dict)
 
             total_count = len(creators_data)
@@ -350,44 +350,44 @@ class CreatorService:
             # Build response cards
             creator_cards = []
             for item in paginated:
-            cd = item["creator_data"]
-            sr = item["scoring_result"]
-            exp = item["explanation"]
-            
-            # Get top videos
-            top_videos = sorted(
-                cd.get("videos", []),
-                key=lambda v: v.get("views", 0),
-                reverse=True
-            )[:3]
-            
-            card = {
-                "id": cd["id"],
-                "channel_id": cd["channel_id"],
-                "channel_name": cd["channel_name"],
-                "thumbnail_url": cd.get("thumbnail_url"),
-                "total_subscribers": cd["total_subscribers"],
-                "total_views": cd["total_views"],
-                "overall_score": round(sr.overall_score, 3),
-                "subscores": {k: round(v.score, 3) for k, v in sr.metric_scores.items()},
-                "why_expert": exp["bullets"],
-                "topic_match_summary": f"Strong match for '{request.topic_query}'" if sr.overall_score > 0.7 else f"Relevant to '{request.topic_query}'",
-                "top_videos": [
-                    {
-                        "video_id": v["video_id"],
-                        "title": v["title"],
-                        "views": v["views"],
-                        "thumbnail_url": v.get("thumbnail_url"),
-                    }
-                    for v in top_videos
-                ],
-                "relevant_content": exp["relevant_content"],
-                "suggested_topics": exp["suggested_topics"],
-                "growth_trend": self._determine_growth_trend(sr),
-                "external_links": cd.get("external_links", [])[:5],
-                "channel_url": f"https://youtube.com/channel/{cd['channel_id']}",
-            }
-            creator_cards.append(card)
+                cd = item["creator_data"]
+                sr = item["scoring_result"]
+                exp = item["explanation"]
+
+                # Get top videos
+                top_videos = sorted(
+                    cd.get("videos", []),
+                    key=lambda v: v.get("views", 0),
+                    reverse=True
+                )[:3]
+
+                card = {
+                    "id": cd["id"],
+                    "channel_id": cd["channel_id"],
+                    "channel_name": cd["channel_name"],
+                    "thumbnail_url": cd.get("thumbnail_url"),
+                    "total_subscribers": cd["total_subscribers"],
+                    "total_views": cd["total_views"],
+                    "overall_score": round(sr.overall_score, 3),
+                    "subscores": {k: round(v.score, 3) for k, v in sr.metric_scores.items()},
+                    "why_expert": exp["bullets"],
+                    "topic_match_summary": f"Strong match for '{request.topic_query}'" if sr.overall_score > 0.7 else f"Relevant to '{request.topic_query}'",
+                    "top_videos": [
+                        {
+                            "video_id": v["video_id"],
+                            "title": v["title"],
+                            "views": v["views"],
+                            "thumbnail_url": v.get("thumbnail_url"),
+                        }
+                        for v in top_videos
+                    ],
+                    "relevant_content": exp["relevant_content"],
+                    "suggested_topics": exp["suggested_topics"],
+                    "growth_trend": self._determine_growth_trend(sr),
+                    "external_links": cd.get("external_links", [])[:5],
+                    "channel_url": f"https://youtube.com/channel/{cd['channel_id']}",
+                }
+                creator_cards.append(card)
 
 
             logger.info(f"   ✓ Built {len(creator_cards)} creator cards")
