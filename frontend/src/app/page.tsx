@@ -76,7 +76,7 @@ export default function Home() {
       topic_keywords: keywords,
       metrics,
       filters,
-      limit: 20,
+      limit: 10, // Show top 10 results only
       offset: 0,
     };
 
@@ -121,16 +121,50 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Hero section */}
+        {/* Landing Page Hero */}
         {!hasSearched && (
-          <div className="text-center mb-12 animate-fade-in">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+          <div className="text-center mb-16 animate-fade-in max-w-4xl mx-auto">
+            <div className="mb-8 inline-flex items-center gap-2 px-4 py-2 bg-ocean-500/10 border border-ocean-500/20 rounded-full text-ocean-400 text-sm font-medium">
+              <Sparkles className="w-4 h-4" />
+              AI-Powered Expert Discovery
+            </div>
+
+            <h2 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
               Find the <span className="gradient-text">Perfect Expert</span>
+              <br />for Your Project
             </h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-              Discover and rank YouTube tech creators for expert network consulting. 
-              Powered by AI analysis of content, credibility, and expertise.
+
+            <p className="text-gray-400 text-xl mb-8 max-w-2xl mx-auto leading-relaxed">
+              Discover and rank YouTube tech creators for expert network consulting.
+              AI analyzes content, credibility, and expertise to find your ideal match.
             </p>
+
+            {/* Simple feature highlights */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 mb-8">
+              <div className="glass-card p-6 text-left">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mb-4">
+                  <Brain className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">AI-Powered Analysis</h3>
+                <p className="text-gray-400 text-sm">Smart scoring across credibility, topic authority, communication, freshness, and growth</p>
+              </div>
+
+              <div className="glass-card p-6 text-left">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center mb-4">
+                  <Youtube className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">YouTube Data</h3>
+                <p className="text-gray-400 text-sm">Real-time analysis of channel metrics, video content, and audience engagement</p>
+              </div>
+
+              <div className="glass-card p-6 text-left">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center mb-4">
+                  <Zap className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">Instant Rankings</h3>
+                <p className="text-gray-400 text-sm">Get ranked results with detailed explanations in seconds</p>
+              </div>
+            </div>
           </div>
         )}
 

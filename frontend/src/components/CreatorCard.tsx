@@ -109,16 +109,34 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
               <ScoreRing score={creator.overall_score} size={60} />
             </div>
 
-            {/* Sub-scores */}
-            <div className="flex flex-wrap gap-2 mt-4">
+            {/* Score Breakdown - Visual Bars */}
+            <div className="space-y-2.5 mt-4">
               {Object.entries(creator.subscores).map(([key, score]) => (
-                <div
-                  key={key}
-                  className="metric-badge"
-                  title={`${METRIC_LABELS[key as MetricType]}: ${formatScore(score)}%`}
-                >
-                  <span>{METRIC_ICONS[key as MetricType]}</span>
-                  <span className={getScoreColor(score)}>{formatScore(score)}</span>
+                <div key={key} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-gray-400">
+                      <span>{METRIC_ICONS[key as MetricType]}</span>
+                      <span>{METRIC_LABELS[key as MetricType]}</span>
+                    </span>
+                    <span className={cn("font-semibold", getScoreColor(score))}>
+                      {formatScore(score)}%
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        score >= 80 ? "bg-gradient-to-r from-emerald-500 to-emerald-400" :
+                        score >= 60 ? "bg-gradient-to-r from-ocean-500 to-ocean-400" :
+                        score >= 40 ? "bg-gradient-to-r from-amber-500 to-amber-400" :
+                        "bg-gradient-to-r from-red-500 to-red-400"
+                      )}
+                      style={{
+                        width: `${score}%`,
+                        animationDelay: `${(key.charCodeAt(0) % 5) * 100}ms`
+                      }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
