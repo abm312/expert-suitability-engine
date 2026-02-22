@@ -149,8 +149,22 @@ export default function Home() {
               Weighted scoring across 5 metrics using semantic embeddings and YouTube API data to rank subject matter experts.
             </p>
 
+            {/* Documentation Link */}
+            <div className="mb-12">
+              <a
+                href="https://docs.google.com/document/d/1fFDbD6vgfRFUJBQ3Ez3t4ZysKnnksopPrCs_aCI82I8/edit?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-ocean-500/10 border border-ocean-500/30 rounded-lg text-ocean-300 hover:bg-ocean-500/20 hover:border-ocean-500/50 transition-all"
+              >
+                <Database className="w-4 h-4" />
+                <span className="font-medium">Understand Scoring Criteria Here</span>
+                <span className="text-ocean-400">→</span>
+              </a>
+            </div>
+
             {/* Simple feature highlights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8 mb-8">
               <div className="glass-card p-6 text-left">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mb-4">
                   <Database className="w-6 h-6 text-white" />
@@ -323,17 +337,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
             <p>Expert Suitability Engine</p>
-            <div className="flex flex-col md:flex-row items-center gap-4">
-              <p>YouTube Data Only • Public Information</p>
-              <a
-                href="https://docs.google.com/document/d/1fFDbD6vgfRFUJBQ3Ez3t4ZysKnnksopPrCs_aCI82I8/edit?usp=sharing"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-ocean-400 hover:text-ocean-300 transition-colors"
-              >
-                Technical Scoring Documentation →
-              </a>
-            </div>
+            <p>YouTube Data Only • Public Information</p>
           </div>
         </div>
       </footer>
