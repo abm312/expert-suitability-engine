@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 import re
+import logging
+import traceback
 
 from app.db.models import Creator, Video, Transcript, MetricsSnapshot
 from app.services.youtube_service import YouTubeService
@@ -13,6 +15,8 @@ from app.services.filter_service import FilterService
 from app.services.explainability_service import ExplainabilityService
 from app.schemas.search import SearchRequest, MetricType
 from app.schemas.creator import CreatorCard, VideoSummary
+
+logger = logging.getLogger(__name__)
 
 
 def parse_datetime_safe(date_str: str) -> Optional[datetime]:
@@ -55,49 +59,67 @@ class CreatorService:
         """
         Discover new creators via YouTube search and add to database.
         """
-        # Search YouTube
-        channels = await self.youtube.search_channels(query, max_results)
-        
-        added = []
-        for channel in channels:
-            channel_id = channel["channel_id"]
-            
-            # Check if already exists
-            result = await db.execute(
-                select(Creator).where(Creator.channel_id == channel_id)
-            )
-            existing = result.scalar_one_or_none()
-            
-            if existing:
-                continue
-            
-            # Fetch full details
-            details = await self.youtube.get_channel_details(channel_id)
-            if not details:
-                continue
-            
-            # Parse channel created date safely
-            channel_created = parse_datetime_safe(details.get("channel_created_date"))
-            
-            # Create creator
-            creator = Creator(
-                channel_id=channel_id,
-                channel_name=details["channel_name"],
-                channel_description=details.get("channel_description"),
-                total_subscribers=details.get("total_subscribers", 0),
-                total_views=details.get("total_views", 0),
-                total_videos=details.get("total_videos", 0),
-                channel_created_date=channel_created,
-                external_links=details.get("external_links", []),
-                thumbnail_url=details.get("thumbnail_url"),
-                country=details.get("country"),
-                last_fetched_at=datetime.utcnow(),
-            )
-            db.add(creator)
-            await db.flush()
-            
-            # Fetch videos
-            videos_data = await self.youtube.get_channel_videos(channel_id, max_results=30)
+        logger.info(f"📺 DISCOVER: Searching YouTube for '{query}' (max {max_results} results)")
+
+        try:
+            # Search YouTube
+            logger.info("   → Calling YouTube API search_channels()...")
+            channels = await self.youtube.search_channels(query, max_results)
+            logger.info(f"   ✓ Found {len(channels)} channels from YouTube")
+
+            added = []
+            logger.info(f"   → Processing {len(channels)} channels...")
+
+            for idx, channel in enumerate(channels, 1):
+                channel_id = channel["channel_id"]
+                channel_name = channel.get("channel_name", "Unknown")
+                logger.info(f"   [{idx}/{len(channels)}] Processing: {channel_name} ({channel_id})")
+
+                # Check if already exists
+                result = await db.execute(
+                    select(Creator).where(Creator.channel_id == channel_id)
+                )
+                existing = result.scalar_one_or_none()
+
+                if existing:
+                    logger.info(f"      ↷ Already in database, skipping")
+                    continue
+
+                # Fetch full details
+                logger.info(f"      → Fetching channel details...")
+                details = await self.youtube.get_channel_details(channel_id)
+                if not details:
+                    logger.warning(f"      ⚠ Failed to get channel details, skipping")
+                    continue
+                logger.info(f"      ✓ Got details: {details.get('total_subscribers', 0)} subscribers")
+
+
+                # Parse channel created date safely
+                channel_created = parse_datetime_safe(details.get("channel_created_date"))
+
+                # Create creator
+                logger.info(f"      → Creating creator in database...")
+                creator = Creator(
+                    channel_id=channel_id,
+                    channel_name=details["channel_name"],
+                    channel_description=details.get("channel_description"),
+                    total_subscribers=details.get("total_subscribers", 0),
+                    total_views=details.get("total_views", 0),
+                    total_videos=details.get("total_videos", 0),
+                    channel_created_date=channel_created,
+                    external_links=details.get("external_links", []),
+                    thumbnail_url=details.get("thumbnail_url"),
+                    country=details.get("country"),
+                    last_fetched_at=datetime.utcnow(),
+                )
+                db.add(creator)
+                await db.flush()
+                logger.info(f"      ✓ Creator saved (ID: {creator.id})")
+
+                # Fetch videos
+                logger.info(f"      → Fetching videos (up to 30)...")
+                videos_data = await self.youtube.get_channel_videos(channel_id, max_results=30)
+                logger.info(f"      ✓ Got {len(videos_data)} videos")
             for v in videos_data:
                 # Parse published date safely
                 video_published = parse_datetime_safe(v.get("published_at"))
@@ -127,15 +149,26 @@ class CreatorService:
                 video_count=creator.total_videos,
             )
             db.add(snapshot)
-            
-            added.append({
-                "channel_id": channel_id,
-                "channel_name": details["channel_name"],
-                "subscribers": details.get("total_subscribers", 0),
-            })
-        
-        await db.commit()
-        return added
+
+
+                logger.info(f"      → Saving videos to database...")
+                added.append({
+                    "channel_id": channel_id,
+                    "channel_name": details["channel_name"],
+                    "subscribers": details.get("total_subscribers", 0),
+                })
+                logger.info(f"      ✓ Channel fully processed!")
+
+            logger.info(f"   → Committing {len(added)} new creators to database...")
+            await db.commit()
+            logger.info(f"✅ DISCOVER COMPLETE: Added {len(added)} new creators")
+            return added
+
+        except Exception as e:
+            logger.error(f"❌ DISCOVER ERROR: {str(e)}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+            await db.rollback()
+            raise
     
     async def search_creators(
         self,
@@ -149,51 +182,66 @@ class CreatorService:
         """
         import time
         start_time = time.time()
-        
+        logger.info("🔎 SEARCH_CREATORS: Starting search flow")
+
         def update(status, step, details=""):
             if progress_callback:
                 progress_callback(status, step, details)
-        
-        # Get topic embedding
-        update("searching", "embedding", f"Looking for '{request.topic_query}' experts...")
-        topic_embedding = None
+
         try:
-            topic_embedding = await self.embeddings.embed_query(request.topic_query)
-        except Exception:
-            pass  # Fall back to keyword matching
-        
-        # AUTO-DISCOVER: Search YouTube for new creators (limited to 20 for speed)
-        update("searching", "youtube", f"Searching YouTube for channels...")
-        try:
-            update("searching", "populating", "Fetching channel data and videos...")
-            await self.discover_creators(db, request.topic_query, max_results=20)
-        except Exception as e:
-            print(f"Discovery error: {e}")
-        
-        # Fetch all creators with their data
-        result = await db.execute(
-            select(Creator)
-            .options(
-                selectinload(Creator.videos).selectinload(Video.transcript),
-                selectinload(Creator.metrics_snapshots)
+            # Get topic embedding
+            logger.info(f"Step 1: Getting embedding for '{request.topic_query}'")
+            update("searching", "embedding", f"Looking for '{request.topic_query}' experts...")
+            topic_embedding = None
+            try:
+                topic_embedding = await self.embeddings.embed_query(request.topic_query)
+                logger.info(f"   ✓ Got embedding (length: {len(topic_embedding) if topic_embedding else 0})")
+            except Exception as e:
+                logger.warning(f"   ⚠ Embedding failed: {e}, falling back to keyword matching")
+                pass  # Fall back to keyword matching
+
+            # AUTO-DISCOVER: Search YouTube for new creators (limited to 20 for speed)
+            logger.info(f"Step 2: Auto-discovering creators from YouTube")
+            update("searching", "youtube", f"Searching YouTube for channels...")
+            try:
+                update("searching", "populating", "Fetching channel data and videos...")
+                await self.discover_creators(db, request.topic_query, max_results=20)
+                logger.info(f"   ✓ Discovery completed")
+            except Exception as e:
+                logger.error(f"   ❌ Discovery error: {e}")
+                logger.error(f"   Traceback:\n{traceback.format_exc()}")
+                # Continue anyway with existing creators in DB
+
+
+            # Fetch all creators with their data
+            logger.info(f"Step 3: Fetching all creators from database with videos and metrics")
+            result = await db.execute(
+                select(Creator)
+                .options(
+                    selectinload(Creator.videos).selectinload(Video.transcript),
+                    selectinload(Creator.metrics_snapshots)
+                )
             )
-        )
-        creators = result.scalars().all()
-        
-        if not creators:
-            return {
-                "query": request.topic_query,
-                "total_results": 0,
-                "filtered_count": 0,
-                "creators": [],
-                "metrics_used": [],
-                "filters_applied": {},
-                "processing_time_ms": (time.time() - start_time) * 1000,
-            }
-        
-        # Convert to dicts for processing
-        creators_data = []
-        for c in creators:
+            creators = result.scalars().all()
+            logger.info(f"   ✓ Fetched {len(creators)} creators from database")
+
+            if not creators:
+                logger.warning(f"   ⚠ No creators in database, returning empty results")
+                return {
+                    "query": request.topic_query,
+                    "total_results": 0,
+                    "filtered_count": 0,
+                    "creators": [],
+                    "metrics_used": [],
+                    "filters_applied": {},
+                    "processing_time_ms": (time.time() - start_time) * 1000,
+                }
+
+
+            # Convert to dicts for processing
+            logger.info(f"Step 4: Converting {len(creators)} creators to data format")
+            creators_data = []
+            for c in creators:
             creator_dict = {
                 "id": c.id,
                 "channel_id": c.channel_id,
@@ -235,56 +283,72 @@ class CreatorService:
                     for s in c.metrics_snapshots
                 ],
             }
-            creators_data.append(creator_dict)
-        
-        total_count = len(creators_data)
-        update("searching", "filtering", f"Checking {total_count} creators against your filters...")
-        
-        # Apply filters
-        filtered_creators = self.filters.filter_creators(creators_data, request.filters)
-        filtered_count = len(filtered_creators)
-        
-        update("searching", "scoring", f"Analyzing {filtered_count} potential experts...")
-        
-        # Score remaining creators
-        scored_creators = []
-        for i, creator_data in enumerate(filtered_creators):
-            if i % 10 == 0:  # Update every 10 creators
-                update("searching", "scoring", f"Evaluating expert {i+1} of {filtered_count}...")
-            scoring_result = await self.scoring.score_creator(
-                creator_data,
-                request.metrics,
-                topic_embedding=topic_embedding,
-                topic_keywords=request.topic_keywords,
-                embedding_service=self.embeddings,
+                creators_data.append(creator_dict)
+
+            total_count = len(creators_data)
+            logger.info(f"   ✓ Converted {total_count} creators")
+
+            logger.info(f"Step 5: Applying filters")
+            logger.info(f"   Filters: {request.filters}")
+            update("searching", "filtering", f"Checking {total_count} creators against your filters...")
+
+            # Apply filters
+            filtered_creators = self.filters.filter_creators(creators_data, request.filters)
+            filtered_count = len(filtered_creators)
+            logger.info(f"   ✓ {filtered_count} creators passed filters (filtered out {total_count - filtered_count})")
+
+            logger.info(f"Step 6: Scoring {filtered_count} creators")
+            update("searching", "scoring", f"Analyzing {filtered_count} potential experts...")
+
+
+            # Score remaining creators
+            scored_creators = []
+            for i, creator_data in enumerate(filtered_creators):
+                if i % 10 == 0:  # Update every 10 creators
+                    update("searching", "scoring", f"Evaluating expert {i+1} of {filtered_count}...")
+                    logger.info(f"   Scoring creator {i+1}/{filtered_count}: {creator_data.get('channel_name')}")
+
+                scoring_result = await self.scoring.score_creator(
+                    creator_data,
+                    request.metrics,
+                    topic_embedding=topic_embedding,
+                    topic_keywords=request.topic_keywords,
+                    embedding_service=self.embeddings,
+                )
+
+                # Generate explainability
+                explanation = await self.explainability.generate_why_expert(
+                    creator_data,
+                    scoring_result,
+                    request.topic_query,
+                )
+
+                # Build creator card
+                scored_creators.append({
+                    "creator_data": creator_data,
+                    "scoring_result": scoring_result,
+                    "explanation": explanation,
+                })
+
+            logger.info(f"   ✓ Scored all {len(scored_creators)} creators")
+
+
+            logger.info(f"Step 7: Sorting and paginating results")
+            # Sort by overall score
+            scored_creators.sort(
+                key=lambda x: x["scoring_result"].overall_score,
+                reverse=True
             )
-            
-            # Generate explainability
-            explanation = await self.explainability.generate_why_expert(
-                creator_data,
-                scoring_result,
-                request.topic_query,
-            )
-            
-            # Build creator card
-            scored_creators.append({
-                "creator_data": creator_data,
-                "scoring_result": scoring_result,
-                "explanation": explanation,
-            })
-        
-        # Sort by overall score
-        scored_creators.sort(
-            key=lambda x: x["scoring_result"].overall_score,
-            reverse=True
-        )
-        
-        # Apply pagination
-        paginated = scored_creators[request.offset:request.offset + request.limit]
-        
-        # Build response cards
-        creator_cards = []
-        for item in paginated:
+            logger.info(f"   ✓ Sorted by score (top score: {scored_creators[0]['scoring_result'].overall_score if scored_creators else 0:.3f})")
+
+            # Apply pagination
+            paginated = scored_creators[request.offset:request.offset + request.limit]
+            logger.info(f"   ✓ Paginated: returning {len(paginated)} creators (offset {request.offset}, limit {request.limit})")
+
+            logger.info(f"Step 8: Building response cards")
+            # Build response cards
+            creator_cards = []
+            for item in paginated:
             cd = item["creator_data"]
             sr = item["scoring_result"]
             exp = item["explanation"]
@@ -323,24 +387,46 @@ class CreatorService:
                 "channel_url": f"https://youtube.com/channel/{cd['channel_id']}",
             }
             creator_cards.append(card)
-        
-        # Get active metrics
-        active_metrics = [
-            m.value for m, cfg in request.metrics.items() 
-            if cfg.enabled
-        ]
-        
-        processing_time = (time.time() - start_time) * 1000
-        
-        return {
-            "query": request.topic_query,
-            "total_results": total_count,
-            "filtered_count": filtered_count,
-            "creators": creator_cards,
-            "metrics_used": active_metrics,
-            "filters_applied": self.filters.get_filter_summary(request.filters),
-            "processing_time_ms": round(processing_time, 2),
-        }
+
+
+            logger.info(f"   ✓ Built {len(creator_cards)} creator cards")
+
+            # Get active metrics
+            active_metrics = [
+                m.value for m, cfg in request.metrics.items()
+                if cfg.enabled
+            ]
+
+            processing_time = (time.time() - start_time) * 1000
+
+            logger.info("=" * 80)
+            logger.info(f"✅ SEARCH COMPLETE!")
+            logger.info(f"   Total discovered: {total_count}")
+            logger.info(f"   Passed filters: {filtered_count}")
+            logger.info(f"   Returning: {len(creator_cards)} creators")
+            logger.info(f"   Processing time: {processing_time:.2f}ms")
+            logger.info(f"   Active metrics: {active_metrics}")
+            logger.info("=" * 80)
+
+            return {
+                "query": request.topic_query,
+                "total_results": total_count,
+                "discovered_count": total_count,  # Add this for routes.py logging
+                "filtered_count": filtered_count,
+                "creators": creator_cards,
+                "metrics_used": active_metrics,
+                "filters_applied": self.filters.get_filter_summary(request.filters),
+                "processing_time_ms": round(processing_time, 2),
+            }
+
+        except Exception as e:
+            logger.error("=" * 80)
+            logger.error(f"❌ SEARCH_CREATORS FAILED")
+            logger.error(f"   Error type: {type(e).__name__}")
+            logger.error(f"   Error message: {str(e)}")
+            logger.error(f"   Full traceback:\n{traceback.format_exc()}")
+            logger.error("=" * 80)
+            raise
     
     def _determine_growth_trend(self, scoring_result) -> str:
         """Determine growth trend description"""

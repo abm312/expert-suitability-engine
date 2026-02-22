@@ -1,11 +1,13 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import isodate
+import logging
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class YouTubeService:
@@ -27,9 +29,11 @@ class YouTubeService:
         relevance_language: str = "en"
     ) -> List[Dict[str, Any]]:
         """Search for YouTube channels by query"""
+        logger.info(f"🎥 YouTube API: search_channels(query='{query}', max_results={max_results})")
         self._ensure_client()
-        
+
         try:
+            logger.info(f"   → Making YouTube API request...")
             request = self.youtube.search().list(
                 part="snippet",
                 q=query,
@@ -38,7 +42,8 @@ class YouTubeService:
                 relevanceLanguage=relevance_language,
             )
             response = request.execute()
-            
+            logger.info(f"   ✓ YouTube API responded with {len(response.get('items', []))} channels")
+
             channels = []
             for item in response.get("items", []):
                 channels.append({
@@ -47,24 +52,30 @@ class YouTubeService:
                     "description": item["snippet"]["description"],
                     "thumbnail_url": item["snippet"]["thumbnails"].get("high", {}).get("url"),
                 })
-            
+
+            logger.info(f"   ✓ Parsed {len(channels)} channel results")
             return channels
         except HttpError as e:
+            logger.error(f"   ❌ YouTube API error: {e}")
             raise Exception(f"YouTube API error: {e}")
     
     async def get_channel_details(self, channel_id: str) -> Optional[Dict[str, Any]]:
         """Get detailed channel information"""
+        logger.info(f"🎥 YouTube API: get_channel_details(channel_id={channel_id})")
         self._ensure_client()
-        
+
         try:
+            logger.info(f"   → Making YouTube API request for channel details...")
             request = self.youtube.channels().list(
                 part="snippet,statistics,brandingSettings,topicDetails",
                 id=channel_id
             )
             response = request.execute()
-            
+
             if not response.get("items"):
+                logger.warning(f"   ⚠ No channel found for ID {channel_id}")
                 return None
+            logger.info(f"   ✓ Got channel details")
             
             item = response["items"][0]
             snippet = item.get("snippet", {})

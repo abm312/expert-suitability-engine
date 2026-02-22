@@ -4,11 +4,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 import json
 import asyncio
+import logging
+import traceback
 
 from app.db.database import get_db
 from app.schemas.search import SearchRequest, DiscoverRequest
 from app.schemas.creator import CreatorResponse, CreatorDetail
 from app.services.creator_service import CreatorService
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 creator_service = CreatorService()
@@ -42,21 +51,26 @@ async def discover_creators(
 ):
     """
     Discover new creators by searching YouTube and adding to database.
-    
+
     This is for populating the database with new creators to evaluate.
     """
+    logger.info(f"🔍 DISCOVER REQUEST: query='{request.search_query}', max_results={request.max_results}")
     try:
+        logger.info("Starting discovery process...")
         added = await creator_service.discover_creators(
             db,
             query=request.search_query,
             max_results=request.max_results,
         )
+        logger.info(f"✅ Discovery complete: Added {len(added)} creators")
         return {
             "status": "success",
             "added_count": len(added),
             "creators": added,
         }
     except Exception as e:
+        logger.error(f"❌ DISCOVER ERROR: {str(e)}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -67,18 +81,43 @@ async def search_creators(
 ):
     """
     Search and rank creators based on topic expertise.
-    
+
     This is the main search endpoint that:
     1. Applies filters
     2. Scores creators on all enabled metrics
     3. Returns ranked creator cards with explanations
     """
+    logger.info("=" * 80)
+    logger.info(f"🔍 NEW SEARCH REQUEST RECEIVED")
+    logger.info(f"Topic: '{request.topic_query}'")
+    logger.info(f"Max results: {request.max_results}")
+    logger.info(f"Filters: {request.filters}")
+    logger.info(f"Metric weights: {request.metric_weights}")
+    logger.info("=" * 80)
+
     try:
+        logger.info("Step 1: Updating progress to 'searching'...")
         update_progress("searching", "youtube", f"Searching YouTube for '{request.topic_query}'...")
+
+        logger.info("Step 2: Calling creator_service.search_creators()...")
         results = await creator_service.search_creators(db, request, progress_callback=update_progress)
+
+        logger.info(f"✅ SEARCH SUCCESSFUL!")
+        logger.info(f"   - Discovered: {results.get('discovered_count', 0)} creators")
+        logger.info(f"   - Filtered: {results.get('filtered_count', 0)} creators")
+        logger.info(f"   - Returning: {len(results.get('creators', []))} creators")
+        logger.info("=" * 80)
+
         update_progress("complete", "done", f"Found {results['filtered_count']} experts")
         return results
+
     except Exception as e:
+        logger.error("=" * 80)
+        logger.error(f"❌ SEARCH FAILED WITH ERROR:")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        logger.error("=" * 80)
         update_progress("error", "failed", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 

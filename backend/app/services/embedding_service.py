@@ -1,8 +1,10 @@
 from typing import List, Optional
+import logging
 from openai import OpenAI
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
@@ -21,19 +23,26 @@ class EmbeddingService:
     
     async def embed_text(self, text: str) -> List[float]:
         """Generate embedding for a single text"""
+        logger.info(f"🧠 OpenAI: embed_text(text_length={len(text)})")
         self._ensure_client()
-        
+
         # Truncate if too long (rough estimate)
         max_chars = 8000 * 4  # ~8k tokens
         if len(text) > max_chars:
+            logger.info(f"   ⚠ Text too long ({len(text)} chars), truncating to {max_chars}")
             text = text[:max_chars]
-        
-        response = self.client.embeddings.create(
-            input=text,
-            model=self.model,
-        )
-        
-        return response.data[0].embedding
+
+        try:
+            logger.info(f"   → Calling OpenAI embeddings API...")
+            response = self.client.embeddings.create(
+                input=text,
+                model=self.model,
+            )
+            logger.info(f"   ✓ Got embedding (dimension: {len(response.data[0].embedding)})")
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"   ❌ OpenAI API error: {e}")
+            raise
     
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts"""
