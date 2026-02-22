@@ -32,7 +32,9 @@ app.include_router(router, prefix="/api/v1", tags=["creators"])
 
 
 @app.get("/")
+@app.head("/")
 async def root():
+    """Root endpoint - supports both GET and HEAD for health checks"""
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,

@@ -1,6 +1,6 @@
 import { SearchRequest, SearchResponse, CreatorCard } from '@/types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://ese-backend-61as.onrender.com/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://ese-backend-6las.onrender.com/api/v1';
 
 class APIError extends Error {
   constructor(public status: number, message: string) {
