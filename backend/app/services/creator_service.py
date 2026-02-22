@@ -120,38 +120,39 @@ class CreatorService:
                 logger.info(f"      → Fetching videos (up to 30)...")
                 videos_data = await self.youtube.get_channel_videos(channel_id, max_results=30)
                 logger.info(f"      ✓ Got {len(videos_data)} videos")
-            for v in videos_data:
-                # Parse published date safely
-                video_published = parse_datetime_safe(v.get("published_at"))
-                
-                video = Video(
+
+                # Process each video
+                for v in videos_data:
+                    # Parse published date safely
+                    video_published = parse_datetime_safe(v.get("published_at"))
+
+                    video = Video(
+                        creator_id=creator.id,
+                        video_id=v["video_id"],
+                        title=v["title"],
+                        description=v.get("description"),
+                        published_at=video_published,
+                        duration_seconds=v.get("duration_seconds", 0),
+                        views=v.get("views", 0),
+                        likes=v.get("likes", 0),
+                        comments=v.get("comments", 0),
+                        has_captions=v.get("has_captions", False),
+                        thumbnail_url=v.get("thumbnail_url"),
+                        tags=v.get("tags", []),
+                    )
+                    db.add(video)
+
+                # Create initial metrics snapshot
+                snapshot = MetricsSnapshot(
                     creator_id=creator.id,
-                    video_id=v["video_id"],
-                    title=v["title"],
-                    description=v.get("description"),
-                    published_at=video_published,
-                    duration_seconds=v.get("duration_seconds", 0),
-                    views=v.get("views", 0),
-                    likes=v.get("likes", 0),
-                    comments=v.get("comments", 0),
-                    has_captions=v.get("has_captions", False),
-                    thumbnail_url=v.get("thumbnail_url"),
-                    tags=v.get("tags", []),
+                    date=date.today(),
+                    subscriber_count=creator.total_subscribers,
+                    view_count=creator.total_views,
+                    video_count=creator.total_videos,
                 )
-                db.add(video)
-            
-            # Create initial metrics snapshot
-            snapshot = MetricsSnapshot(
-                creator_id=creator.id,
-                date=date.today(),
-                subscriber_count=creator.total_subscribers,
-                view_count=creator.total_views,
-                video_count=creator.total_videos,
-            )
-            db.add(snapshot)
+                db.add(snapshot)
 
-
-                logger.info(f"      → Saving videos to database...")
+                logger.info(f"      → Saved {len(videos_data)} videos and metrics snapshot")
                 added.append({
                     "channel_id": channel_id,
                     "channel_name": details["channel_name"],
