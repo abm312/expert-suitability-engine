@@ -9,6 +9,7 @@ psycopg2-binary==2.9.9
 alembic==1.13.1
 asyncpg==0.29.0
 pgvector==0.2.4
+greenlet==3.0.3
 
 # YouTube API
 google-api-python-client==2.116.0
