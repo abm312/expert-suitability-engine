@@ -165,7 +165,7 @@ export default function Home() {
                   <Youtube className="w-6 h-6 text-white" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">YouTube Data API Integration</h3>
-                <p className="text-gray-400 text-sm">Quantitative analysis of channel statistics, content embeddings, transcript NLP, and engagement metrics via YouTube Data API v3</p>
+                <p className="text-gray-400 text-sm">Quantitative analysis of channel statistics, content embeddings, and engagement metrics via YouTube Data API v3</p>
               </div>
 
               <div className="glass-card p-6 text-left">
