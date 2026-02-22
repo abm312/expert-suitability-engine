@@ -298,16 +298,25 @@ class CreatorService:
             filtered_count = len(filtered_creators)
             logger.info(f"   ✓ {filtered_count} creators passed filters (filtered out {total_count - filtered_count})")
 
-            logger.info(f"Step 6: Scoring {filtered_count} creators")
-            update("searching", "scoring", f"Analyzing {filtered_count} potential experts...")
+            # CRITICAL FIX: Limit scoring to prevent timeout
+            # Scoring all creators takes too long (164 creators = 2+ minutes with API calls)
+            # Limit to first 50 to stay under 60 second timeout
+            MAX_CREATORS_TO_SCORE = 50
+            creators_to_score = filtered_creators[:MAX_CREATORS_TO_SCORE]
 
+            if len(filtered_creators) > MAX_CREATORS_TO_SCORE:
+                logger.warning(f"   ⚠ Limiting scoring to first {MAX_CREATORS_TO_SCORE} of {filtered_count} creators to prevent timeout")
+                update("searching", "scoring", f"Analyzing top {MAX_CREATORS_TO_SCORE} of {filtered_count} potential experts...")
+            else:
+                logger.info(f"Step 6: Scoring {filtered_count} creators")
+                update("searching", "scoring", f"Analyzing {filtered_count} potential experts...")
 
-            # Score remaining creators
+            # Score creators (limited to prevent timeout)
             scored_creators = []
-            for i, creator_data in enumerate(filtered_creators):
+            for i, creator_data in enumerate(creators_to_score):
                 if i % 10 == 0:  # Update every 10 creators
-                    update("searching", "scoring", f"Evaluating expert {i+1} of {filtered_count}...")
-                    logger.info(f"   Scoring creator {i+1}/{filtered_count}: {creator_data.get('channel_name')}")
+                    update("searching", "scoring", f"Evaluating expert {i+1} of {len(creators_to_score)}...")
+                    logger.info(f"   Scoring creator {i+1}/{len(creators_to_score)}: {creator_data.get('channel_name')}")
 
                 scoring_result = await self.scoring.score_creator(
                     creator_data,
