@@ -146,8 +146,7 @@ export default function Home() {
             </h2>
 
             <p className="text-gray-400 text-xl mb-8 max-w-2xl mx-auto leading-relaxed">
-              Multi-dimensional weighted scoring algorithm for expert network consulting.
-              Semantic embeddings, quantitative metrics, and real-time data analysis to identify optimal subject matter experts.
+              Weighted scoring across 5 metrics using semantic embeddings and YouTube API data to rank subject matter experts.
             </p>
 
             {/* Simple feature highlights */}
@@ -324,7 +323,17 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
             <p>Expert Suitability Engine v1.0</p>
-            <p>YouTube Data Only • Public Information • No Scraping</p>
+            <div className="flex flex-col md:flex-row items-center gap-4">
+              <p>YouTube Data Only • Public Information • No Scraping</p>
+              <a
+                href="https://docs.google.com/document/d/1fFDbD6vgfRFUJBQ3Ez3t4ZysKnnksopPrCs_aCI82I8/edit?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ocean-400 hover:text-ocean-300 transition-colors"
+              >
+                Technical Scoring Documentation →
+              </a>
+            </div>
           </div>
         </div>
       </footer>
