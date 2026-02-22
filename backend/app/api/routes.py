@@ -90,9 +90,10 @@ async def search_creators(
     logger.info("=" * 80)
     logger.info(f"🔍 NEW SEARCH REQUEST RECEIVED")
     logger.info(f"Topic: '{request.topic_query}'")
-    logger.info(f"Max results: {request.max_results}")
+    logger.info(f"Keywords: {request.topic_keywords}")
+    logger.info(f"Limit: {request.limit}, Offset: {request.offset}")
     logger.info(f"Filters: {request.filters}")
-    logger.info(f"Metric weights: {request.metric_weights}")
+    logger.info(f"Metrics: {[(m.value, f'weight={cfg.weight}, enabled={cfg.enabled}') for m, cfg in request.metrics.items()]}")
     logger.info("=" * 80)
 
     try:
