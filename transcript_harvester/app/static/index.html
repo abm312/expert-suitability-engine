@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transcript Harvester</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --panel-2: #19233a;
+      --border: #25314f;
+      --text: #e6edf7;
+      --muted: #9fb0d0;
+      --accent: #5cc8ff;
+      --accent-2: #7cf0c6;
+      --danger: #ff8b8b;
+      --warn: #ffd37c;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(92, 200, 255, 0.14), transparent 35%),
+        radial-gradient(circle at top right, rgba(124, 240, 198, 0.10), transparent 25%),
+        linear-gradient(180deg, #0b1220 0%, #0d1424 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    .hero {
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 10px;
+      border: 1px solid rgba(92, 200, 255, 0.25);
+      border-radius: 999px;
+      color: var(--accent);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: rgba(92, 200, 255, 0.08);
+    }
+
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(32px, 5vw, 56px);
+      line-height: 1.05;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      max-width: 780px;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(280px, 420px) minmax(320px, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(18, 26, 43, 0.95), rgba(15, 22, 37, 0.95));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 16px;
+      letter-spacing: 0.01em;
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .hint {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    input:focus,
+    textarea:focus {
+      border-color: rgba(92, 200, 255, 0.55);
+      box-shadow: 0 0 0 4px rgba(92, 200, 255, 0.12);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, var(--accent), #49a7ff);
+      color: #06111e;
+    }
+
+    .secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .status-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 10px;
+    }
+
+    .status-item {
+      display: flex;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 5px;
+      border-radius: 999px;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .status-item.pending .status-dot {
+      background: var(--warn);
+    }
+
+    .status-item.done .status-dot {
+      background: var(--accent-2);
+    }
+
+    .status-item.error .status-dot {
+      background: var(--danger);
+    }
+
+    .status-copy {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .summary {
+      display: none;
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .summary.visible {
+      display: block;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .results {
+      display: grid;
+      gap: 12px;
+    }
+
+    .video {
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .video-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 8px;
+    }
+
+    .video-title {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    .pill {
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+
+    .pill.ok {
+      color: var(--accent-2);
+      background: rgba(124, 240, 198, 0.08);
+      border-color: rgba(124, 240, 198, 0.16);
+    }
+
+    .pill.bad {
+      color: var(--danger);
+      background: rgba(255, 139, 139, 0.08);
+      border-color: rgba(255, 139, 139, 0.16);
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .excerpt {
+      color: #d7e3f8;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      margin: 0;
+    }
+
+    .error-copy {
+      color: var(--danger);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .footer-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 920px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <span class="eyebrow">Standalone Tool</span>
+      <h1>Transcript Harvester</h1>
+      <p class="subtitle">
+        Fetch recent YouTube transcripts for a channel, watch the request progress in plain language,
+        inspect what came back, and download the dump as JSON.
+      </p>
+    </div>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Request</h2>
+        <form id="harvest-form">
+          <div class="field">
+            <label for="channel-id">Channel ID</label>
+            <input id="channel-id" name="channel_id" type="text" placeholder="UC_x5XG1OV2P6uZZ5FSM9Ttw">
+            <div class="hint">Use this if you already have the YouTube channel ID.</div>
+          </div>
+
+          <div class="field">
+            <label for="channel-url">Channel URL or Handle URL</label>
+            <input id="channel-url" name="channel_url" type="text" placeholder="https://youtube.com/@GoogleDevelopers">
+          </div>
+
+          <div class="field">
+            <label for="search-query">Fallback Search Query</label>
+            <input id="search-query" name="search_query" type="text" placeholder="Google for Developers">
+            <div class="hint">The backend uses the first non-empty input: channel ID, then URL, then search query.</div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label for="max-videos">Max Videos</label>
+              <input id="max-videos" name="max_videos" type="number" min="1" max="50" value="5">
+            </div>
+            <div class="field">
+              <label for="languages">Languages</label>
+              <input id="languages" name="languages" type="text" value="en" placeholder="en">
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="run-button" type="submit">Fetch Transcripts</button>
+            <button class="secondary" id="download-button" type="button" disabled>Download JSON</button>
+          </div>
+        </form>
+        <p class="footer-note">Docs are still available at <a href="/docs" style="color: var(--accent)">/docs</a>.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Activity</h2>
+        <ul class="status-list" id="status-list">
+          <li class="status-item">
+            <span class="status-dot"></span>
+            <div class="status-copy">Waiting for a request.</div>
+          </li>
+        </ul>
+
+        <div class="summary" id="summary">
+          <div class="summary-grid">
+            <div class="stat">
+              <div class="stat-label">Channel</div>
+              <div class="stat-value" id="summary-channel">-</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Videos Checked</div>
+              <div class="stat-value" id="summary-total">0</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Transcripts Found</div>
+              <div class="stat-value" id="summary-found">0</div>
+            </div>
+          </div>
+
+          <div class="results" id="results"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('harvest-form');
+    const runButton = document.getElementById('run-button');
+    const downloadButton = document.getElementById('download-button');
+    const statusList = document.getElementById('status-list');
+    const summary = document.getElementById('summary');
+    const results = document.getElementById('results');
+    const summaryChannel = document.getElementById('summary-channel');
+    const summaryTotal = document.getElementById('summary-total');
+    const summaryFound = document.getElementById('summary-found');
+
+    let lastPayload = null;
+    let busyInterval = null;
+
+    function resetStatus() {
+      statusList.innerHTML = '';
+      clearInterval(busyInterval);
+      busyInterval = null;
+    }
+
+    function addStatus(text, state = 'pending') {
+      const item = document.createElement('li');
+      item.className = `status-item ${state}`;
+      item.innerHTML = `
+        <span class="status-dot"></span>
+        <div class="status-copy">${text}</div>
+      `;
+      statusList.appendChild(item);
+      return item;
+    }
+
+    function setBusyMessages() {
+      const messages = [
+        'Validating inputs and building the request payload.',
+        'Sending request to the local transcript service.',
+        'Waiting for channel resolution and recent video discovery.',
+        'Waiting for transcript fetches and local cache writes.'
+      ];
+
+      let index = 0;
+      addStatus(messages[index], 'pending');
+      busyInterval = setInterval(() => {
+        index = Math.min(index + 1, messages.length - 1);
+        addStatus(messages[index], 'pending');
+        if (index === messages.length - 1) {
+          clearInterval(busyInterval);
+          busyInterval = null;
+        }
+      }, 900);
+    }
+
+    function getPayload() {
+      const channelId = document.getElementById('channel-id').value.trim();
+      const channelUrl = document.getElementById('channel-url').value.trim();
+      const searchQuery = document.getElementById('search-query').value.trim();
+      const maxVideos = Number(document.getElementById('max-videos').value || '5');
+      const languages = document.getElementById('languages').value
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+      return {
+        channel_id: channelId || null,
+        channel_url: channelUrl || null,
+        search_query: searchQuery || null,
+        max_videos: maxVideos,
+        languages: languages.length ? languages : ['en'],
+        refresh: false,
+        persist_dump_file: false
+      };
+    }
+
+    function escapeHtml(value) {
+      return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    function renderResults(data) {
+      summary.classList.add('visible');
+      summaryChannel.textContent = data.channel_name;
+      summaryTotal.textContent = String(data.videos.length);
+      summaryFound.textContent = String(data.transcripts_found);
+
+      results.innerHTML = '';
+      data.videos.forEach((video) => {
+        const item = document.createElement('div');
+        const ok = video.transcript_status === 'fetched';
+        const excerpt = video.transcript_text
+          ? video.transcript_text.slice(0, 280)
+          : (video.transcript_error || 'No transcript returned.');
+
+        item.className = 'video';
+        item.innerHTML = `
+          <div class="video-top">
+            <div class="video-title">${escapeHtml(video.title)}</div>
+            <span class="pill ${ok ? 'ok' : 'bad'}">${ok ? 'Fetched' : 'Missing'}</span>
+          </div>
+          <div class="meta">
+            ${video.video_id}
+            ${video.transcript_language ? ` • ${escapeHtml(video.transcript_language)}` : ''}
+            ${video.fetched_from_cache ? ' • cached' : ''}
+          </div>
+          ${ok
+            ? `<p class="excerpt">${escapeHtml(excerpt)}${video.transcript_text && video.transcript_text.length > 280 ? '…' : ''}</p>`
+            : `<div class="error-copy">${escapeHtml(excerpt)}</div>`}
+        `;
+        results.appendChild(item);
+      });
+    }
+
+    async function runDump(event) {
+      event.preventDefault();
+      resetStatus();
+      summary.classList.remove('visible');
+      results.innerHTML = '';
+      downloadButton.disabled = true;
+
+      const payload = getPayload();
+      lastPayload = payload;
+      runButton.disabled = true;
+      setBusyMessages();
+
+      try {
+        const response = await fetch('/api/v1/transcripts/dump', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        clearInterval(busyInterval);
+        busyInterval = null;
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+          addStatus(`Request failed: ${error.detail || 'Unknown error'}`, 'error');
+          return;
+        }
+
+        const data = await response.json();
+        addStatus(`Channel resolved: ${data.channel_name}.`, 'done');
+        addStatus(`Transcript fetch finished. ${data.transcripts_found} of ${data.videos.length} videos returned transcripts.`, 'done');
+        renderResults(data);
+        downloadButton.disabled = false;
+      } catch (error) {
+        clearInterval(busyInterval);
+        busyInterval = null;
+        addStatus(`Network error: ${error.message}`, 'error');
+      } finally {
+        runButton.disabled = false;
+      }
+    }
+
+    async function downloadDump() {
+      if (!lastPayload) {
+        return;
+      }
+
+      addStatus('Requesting downloadable JSON dump.', 'pending');
+      try {
+        const response = await fetch('/api/v1/transcripts/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(lastPayload)
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: 'Download failed' }));
+          addStatus(`Download failed: ${error.detail || 'Unknown error'}`, 'error');
+          return;
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'transcript-dump.json';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        addStatus('Download complete.', 'done');
+      } catch (error) {
+        addStatus(`Download error: ${error.message}`, 'error');
+      }
+    }
+
+    form.addEventListener('submit', runDump);
+    downloadButton.addEventListener('click', downloadDump);
+  </script>
+</body>
+</html>

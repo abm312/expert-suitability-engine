@@ -1,6 +1,7 @@
 import { SearchRequest, SearchResponse, CreatorCard } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://ese-backend-61as.onrender.com/api/v1';
+const LOCAL_TRANSCRIPT_API_BASE = 'http://127.0.0.1:8100/api/v1';
 
 class APIError extends Error {
   constructor(public status: number, message: string) {
@@ -36,6 +37,33 @@ async function fetchAPI<T>(
     }
     throw err;
   }
+}
+
+function getTranscriptApiBase(): string | null {
+  if (process.env.NEXT_PUBLIC_TRANSCRIPT_API_URL) {
+    return process.env.NEXT_PUBLIC_TRANSCRIPT_API_URL;
+  }
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return LOCAL_TRANSCRIPT_API_BASE;
+    }
+  }
+
+  return null;
+}
+
+function parseDownloadFilename(
+  contentDisposition: string | null,
+  fallback: string
+): string {
+  if (!contentDisposition) {
+    return fallback;
+  }
+
+  const match = contentDisposition.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || fallback;
 }
 
 export const api = {
@@ -90,7 +118,60 @@ export const api = {
   // Get search progress
   getProgress: () =>
     fetchAPI<{ status: string; step: string; details: string }>('/progress'),
+
+  // Resolve transcript service base URL (local-only unless explicitly configured)
+  getTranscriptApiBase,
+
+  // Download transcript dump JSON from the standalone transcript service
+  downloadTranscriptDump: async (params: { channelId: string; maxVideos: number }) => {
+    const transcriptBase = getTranscriptApiBase();
+
+    if (!transcriptBase) {
+      throw new APIError(
+        0,
+        'Transcript export is only enabled in local development unless NEXT_PUBLIC_TRANSCRIPT_API_URL is configured.'
+      );
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${transcriptBase}/transcripts/download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channel_id: params.channelId,
+          max_videos: params.maxVideos,
+          languages: ['en'],
+          refresh: false,
+          persist_dump_file: false,
+        }),
+      });
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new APIError(
+          0,
+          'Cannot reach the local transcript service. Start Transcript Harvester on http://127.0.0.1:8100 first.'
+        );
+      }
+      throw err;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Transcript export failed' }));
+      throw new APIError(response.status, error.detail || 'Transcript export failed');
+    }
+
+    const blob = await response.blob();
+    const fallbackName = `${params.channelId}-transcripts.json`;
+    const filename = parseDownloadFilename(
+      response.headers.get('Content-Disposition'),
+      fallbackName
+    );
+
+    return { blob, filename };
+  },
 };
 
 export { APIError };
-
