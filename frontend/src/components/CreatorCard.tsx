@@ -149,65 +149,6 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
                   </span>
                 </div>
 
-                {transcriptApiBase && (
-                  <div className="mt-3 p-3 bg-slate-800/35 rounded-xl border border-white/5">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Download className="w-4 h-4 text-ocean-400" />
-                      <span className="text-sm font-medium text-gray-200">Transcript Scraper</span>
-                    </div>
-                    <p className="text-xs text-gray-500 leading-relaxed mb-3">
-                      Download one JSON file containing transcript results for this creator&apos;s most recent videos.
-                      This uses the separate transcript scraper service and does not touch the current search backend.
-                    </p>
-                    <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-                      <label className="flex-1">
-                        <span className="block text-xs text-gray-400 mb-1.5">Recent videos</span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="50"
-                          value={transcriptVideoCount}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value, 10);
-                            if (Number.isNaN(value)) {
-                              setTranscriptVideoCount(1);
-                              return;
-                            }
-                            setTranscriptVideoCount(Math.min(50, Math.max(1, value)));
-                          }}
-                          className="input-field text-sm"
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleTranscriptExport}
-                        disabled={isExportingTranscripts}
-                        className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isExportingTranscripts ? (
-                          <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4" />
-                        )}
-                        <span>{isExportingTranscripts ? 'Exporting...' : 'Export JSON'}</span>
-                      </button>
-                    </div>
-                    {transcriptStatus && (
-                      <p
-                        className={cn(
-                          "text-xs mt-3",
-                          transcriptStatusTone === 'error'
-                            ? 'text-red-300'
-                            : transcriptStatusTone === 'success'
-                            ? 'text-emerald-300'
-                            : 'text-gray-400'
-                        )}
-                      >
-                        {transcriptStatus}
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* Score */}
@@ -253,6 +194,66 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
               <Zap className="w-4 h-4 text-flame-400" />
               {creator.topic_match_summary}
             </p>
+
+            {transcriptApiBase && (
+              <div className="mt-4 p-3 bg-slate-800/35 rounded-xl border border-white/5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Download className="w-4 h-4 text-ocean-400" />
+                  <span className="text-sm font-medium text-gray-200">Transcript Scraper</span>
+                </div>
+                <p className="text-xs text-gray-500 leading-relaxed mb-3">
+                  Download one JSON file containing transcript results for this creator&apos;s most recent videos.
+                  This uses the separate transcript scraper service and does not touch the current search backend.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+                  <label className="flex-1">
+                    <span className="block text-xs text-gray-400 mb-1.5">Recent videos</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={transcriptVideoCount}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value, 10);
+                        if (Number.isNaN(value)) {
+                          setTranscriptVideoCount(1);
+                          return;
+                        }
+                        setTranscriptVideoCount(Math.min(50, Math.max(1, value)));
+                      }}
+                      className="input-field text-sm"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleTranscriptExport}
+                    disabled={isExportingTranscripts}
+                    className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isExportingTranscripts ? (
+                      <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                    <span>{isExportingTranscripts ? 'Downloading...' : 'Download Raw Transcripts'}</span>
+                  </button>
+                </div>
+                {transcriptStatus && (
+                  <p
+                    className={cn(
+                      "text-xs mt-3",
+                      transcriptStatusTone === 'error'
+                        ? 'text-red-300'
+                        : transcriptStatusTone === 'success'
+                        ? 'text-emerald-300'
+                        : 'text-gray-400'
+                    )}
+                  >
+                    {transcriptStatus}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
