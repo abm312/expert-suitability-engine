@@ -1,1 +1,1 @@
-"""Transcript Harvester package."""
+"""Transcript Scraper package."""

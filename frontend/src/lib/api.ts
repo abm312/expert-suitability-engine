@@ -129,7 +129,7 @@ export const api = {
     if (!transcriptBase) {
       throw new APIError(
         0,
-        'Transcript export is only enabled in local development unless NEXT_PUBLIC_TRANSCRIPT_API_URL is configured.'
+        'Transcript scraper is only available when NEXT_PUBLIC_TRANSCRIPT_API_URL is configured.'
       );
     }
 
@@ -152,15 +152,15 @@ export const api = {
       if (err instanceof TypeError && err.message.includes('fetch')) {
         throw new APIError(
           0,
-          'Cannot reach the local transcript service. Start Transcript Harvester on http://127.0.0.1:8100 first.'
+          'Cannot reach the transcript scraper service. Make sure it is running and reachable.'
         );
       }
       throw err;
     }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Transcript export failed' }));
-      throw new APIError(response.status, error.detail || 'Transcript export failed');
+      const error = await response.json().catch(() => ({ detail: 'Transcript scraper request failed' }));
+      throw new APIError(response.status, error.detail || 'Transcript scraper request failed');
     }
 
     const blob = await response.blob();

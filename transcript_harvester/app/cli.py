@@ -8,7 +8,7 @@ from app.services.harvest_service import HarvestService
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Transcript Harvester CLI")
+    parser = argparse.ArgumentParser(description="Transcript Scraper CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     dump_parser = subparsers.add_parser("dump", help="Fetch transcripts for a channel")

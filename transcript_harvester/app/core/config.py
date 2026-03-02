@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Transcript Harvester"
+    APP_NAME: str = "Transcript Scraper"
     APP_VERSION: str = "1.0.0"
     PORT: int = 8100
 

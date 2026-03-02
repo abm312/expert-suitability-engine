@@ -1,4 +1,4 @@
-# Transcript Harvester
+# Transcript Scraper
 
 Standalone local service for fetching recent YouTube video transcripts for a channel.
 

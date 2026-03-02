@@ -80,7 +80,7 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
       setTranscriptStatus(
         err instanceof Error
           ? err.message
-          : 'Transcript export failed. Make sure the local transcript service is running on port 8100.'
+          : 'Transcript scraper request failed. Make sure the transcript scraper service is reachable.'
       );
     } finally {
       setIsExportingTranscripts(false);
@@ -153,11 +153,11 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
                   <div className="mt-3 p-3 bg-slate-800/35 rounded-xl border border-white/5">
                     <div className="flex items-center gap-2 mb-1.5">
                       <Download className="w-4 h-4 text-ocean-400" />
-                      <span className="text-sm font-medium text-gray-200">Transcript Export</span>
+                      <span className="text-sm font-medium text-gray-200">Transcript Scraper</span>
                     </div>
                     <p className="text-xs text-gray-500 leading-relaxed mb-3">
                       Download one JSON file containing transcript results for this creator&apos;s most recent videos.
-                      This uses the separate local transcript service on port 8100 and does not touch the current search backend.
+                      This uses the separate transcript scraper service and does not touch the current search backend.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
                       <label className="flex-1">
