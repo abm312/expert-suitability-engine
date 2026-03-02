@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { 
   ExternalLink, 
@@ -12,11 +12,13 @@ import {
   Play,
   MessageSquare,
   Star,
-  Zap
+  Zap,
+  Download
 } from 'lucide-react';
 import { CreatorCard as CreatorCardType, MetricType } from '@/types';
 import { cn, formatNumber, formatScore, getScoreColor, getScoreBgColor, getGrowthIcon, getLinkIcon, getDomainFromUrl } from '@/lib/utils';
 import { ScoreRing } from './ScoreRing';
+import { api } from '@/lib/api';
 
 interface CreatorCardProps {
   creator: CreatorCardType;
@@ -41,6 +43,49 @@ const METRIC_ICONS: Record<MetricType, string> = {
 
 export function CreatorCard({ creator, rank }: CreatorCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [transcriptApiBase, setTranscriptApiBase] = useState<string | null>(null);
+  const [transcriptVideoCount, setTranscriptVideoCount] = useState(5);
+  const [isExportingTranscripts, setIsExportingTranscripts] = useState(false);
+  const [transcriptStatus, setTranscriptStatus] = useState<string | null>(null);
+  const [transcriptStatusTone, setTranscriptStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral');
+
+  useEffect(() => {
+    setTranscriptApiBase(api.getTranscriptApiBase());
+  }, []);
+
+  const handleTranscriptExport = async () => {
+    setIsExportingTranscripts(true);
+    setTranscriptStatusTone('neutral');
+    setTranscriptStatus(`Requesting a transcript dump for the ${transcriptVideoCount} most recent videos...`);
+
+    try {
+      const { blob, filename } = await api.downloadTranscriptDump({
+        channelId: creator.channel_id,
+        maxVideos: transcriptVideoCount,
+      });
+
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      setTranscriptStatusTone('success');
+      setTranscriptStatus(`Download started: ${filename}`);
+    } catch (err) {
+      setTranscriptStatusTone('error');
+      setTranscriptStatus(
+        err instanceof Error
+          ? err.message
+          : 'Transcript export failed. Make sure the local transcript service is running on port 8100.'
+      );
+    } finally {
+      setIsExportingTranscripts(false);
+    }
+  };
 
   return (
     <div 
@@ -103,6 +148,66 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
                     {getGrowthIcon(creator.growth_trend)} {creator.growth_trend}
                   </span>
                 </div>
+
+                {transcriptApiBase && (
+                  <div className="mt-3 p-3 bg-slate-800/35 rounded-xl border border-white/5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Download className="w-4 h-4 text-ocean-400" />
+                      <span className="text-sm font-medium text-gray-200">Transcript Export</span>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-relaxed mb-3">
+                      Download one JSON file containing transcript results for this creator&apos;s most recent videos.
+                      This uses the separate local transcript service on port 8100 and does not touch the current search backend.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+                      <label className="flex-1">
+                        <span className="block text-xs text-gray-400 mb-1.5">Recent videos</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="50"
+                          value={transcriptVideoCount}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value, 10);
+                            if (Number.isNaN(value)) {
+                              setTranscriptVideoCount(1);
+                              return;
+                            }
+                            setTranscriptVideoCount(Math.min(50, Math.max(1, value)));
+                          }}
+                          className="input-field text-sm"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleTranscriptExport}
+                        disabled={isExportingTranscripts}
+                        className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isExportingTranscripts ? (
+                          <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4" />
+                        )}
+                        <span>{isExportingTranscripts ? 'Exporting...' : 'Export JSON'}</span>
+                      </button>
+                    </div>
+                    {transcriptStatus && (
+                      <p
+                        className={cn(
+                          "text-xs mt-3",
+                          transcriptStatusTone === 'error'
+                            ? 'text-red-300'
+                            : transcriptStatusTone === 'success'
+                            ? 'text-emerald-300'
+                            : 'text-gray-400'
+                        )}
+                      >
+                        {transcriptStatus}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Score */}
@@ -274,4 +379,3 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
     </div>
   );
 }
-
