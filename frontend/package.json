@@ -9,12 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.312.0",
     "next": "14.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "lucide-react": "^0.312.0",
     "recharts": "^2.10.4",
-    "clsx": "^2.1.0",
+    "sharp": "^0.34.5",
     "tailwind-merge": "^2.2.0"
   },
   "devDependencies": {
@@ -29,4 +30,3 @@
     "typescript": "^5.3.3"
   }
 }
-
