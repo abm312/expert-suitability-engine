@@ -17,7 +17,7 @@ class HarvestService:
         self.settings = settings
         self.store = SQLiteStore(settings.database_path)
         self.youtube = YouTubeCatalogService(settings.YOUTUBE_API_KEY)
-        self.transcripts = TranscriptFetcher()
+        self.transcripts = TranscriptFetcher(settings)
 
         Path(settings.OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 

@@ -37,10 +37,25 @@ cd transcript_harvester
 ../.venv/bin/python -m app.cli dump --channel-id UC_x5XG1OV2P6uZZ5FSM9Ttw --max-videos 5
 ```
 
+## Transcript Providers
+
+- `TH_TRANSCRIPT_PROVIDER=auto` uses RapidAPI when `TH_RAPIDAPI_KEY` is set, otherwise it falls back to the local `youtube-transcript-api` library.
+- `TH_TRANSCRIPT_PROVIDER=rapidapi` forces the Solid API RapidAPI provider.
+- `TH_TRANSCRIPT_PROVIDER=youtube_transcript_api` forces the local library.
+
+For the RapidAPI provider shown in your dashboard:
+
+```bash
+TH_TRANSCRIPT_PROVIDER=rapidapi
+TH_RAPIDAPI_KEY=your_rapidapi_key
+TH_RAPIDAPI_HOST=youtube-transcript3.p.rapidapi.com
+```
+
 ## Render Note
 
 - This service includes `.python-version` pinned to `3.12` so Render does not default to Python 3.14, which can force source builds for the older pinned `pydantic` stack.
 - If Render still shows Python 3.14 in the build logs for your service, set the service env var `PYTHON_VERSION=3.12.9` and redeploy.
+- For stable deployed transcript fetching, set `TH_TRANSCRIPT_PROVIDER=rapidapi` and add `TH_RAPIDAPI_KEY` in Render instead of relying on cloud-IP scraping.
 
 ## API Endpoints
 

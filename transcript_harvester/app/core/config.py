@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,6 +11,11 @@ class Settings(BaseSettings):
     PORT: int = 8100
 
     YOUTUBE_API_KEY: str = ""
+    TRANSCRIPT_PROVIDER: str = "auto"
+    RAPIDAPI_KEY: str = ""
+    RAPIDAPI_HOST: str = "youtube-transcript3.p.rapidapi.com"
+    RAPIDAPI_BASE_URL: str = ""
+    RAPIDAPI_TIMEOUT_SECONDS: float = 20.0
 
     DATA_DIR: str = "./data"
     OUTPUT_DIR: str = "./dumps"
@@ -28,6 +34,12 @@ class Settings(BaseSettings):
     def database_path(self) -> Path:
         return Path(self.DATA_DIR) / self.DATABASE_FILENAME
 
+    @property
+    def rapidapi_base_url(self) -> str:
+        if self.RAPIDAPI_BASE_URL:
+            return self.RAPIDAPI_BASE_URL.rstrip("/")
+        return f"https://{self.RAPIDAPI_HOST}".rstrip("/")
+
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -35,8 +47,10 @@ def get_settings() -> Settings:
 
     # Allow plain YOUTUBE_API_KEY from the shell if TH_YOUTUBE_API_KEY is not set.
     if not settings.YOUTUBE_API_KEY:
-        import os
-
         settings.YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+
+    # Allow plain RAPIDAPI_KEY from the shell if TH_RAPIDAPI_KEY is not set.
+    if not settings.RAPIDAPI_KEY:
+        settings.RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
 
     return settings
