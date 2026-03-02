@@ -37,6 +37,11 @@ cd transcript_harvester
 ../.venv/bin/python -m app.cli dump --channel-id UC_x5XG1OV2P6uZZ5FSM9Ttw --max-videos 5
 ```
 
+## Render Note
+
+- This service includes `.python-version` pinned to `3.12` so Render does not default to Python 3.14, which can force source builds for the older pinned `pydantic` stack.
+- If Render still shows Python 3.14 in the build logs for your service, set the service env var `PYTHON_VERSION=3.12.9` and redeploy.
+
 ## API Endpoints
 
 - `GET /health`
