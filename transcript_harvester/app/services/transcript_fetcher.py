@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime
 from typing import Any
@@ -9,9 +10,15 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 from app.core.config import Settings
 
+logger = logging.getLogger(__name__)
+
 
 class TranscriptFetcher:
     TRANSIENT_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+    RETRYABLE_PROVIDER_ERROR_MARKERS = (
+        "not available at the moment for this video or language",
+        "not available for this video or language",
+    )
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -50,15 +57,31 @@ class TranscriptFetcher:
         if not self.settings.RAPIDAPI_KEY:
             raise RuntimeError("RAPIDAPI_KEY is not configured")
 
-        params: dict[str, str] = {"videoId": video_id}
         preferred_language = self._pick_rapidapi_language(languages)
-        if preferred_language:
-            params["lang"] = preferred_language
+        language_label = preferred_language or "auto"
+        logger.info(
+            "RapidAPI transcript fetch start video_id=%s language=%s",
+            video_id,
+            language_label,
+        )
 
+        payload = self._request_rapidapi(video_id, preferred_language)
+        normalized = self._normalize_rapidapi_payload(payload.get("transcript"), preferred_language)
+        if not normalized["segments"]:
+            raise RuntimeError(
+                f"RapidAPI transcript fetch failed (lang={language_label}): Transcript fetch returned no segments"
+            )
+        return normalized
+
+    def _request_rapidapi(self, video_id: str, language: str | None) -> dict[str, Any]:
+        params: dict[str, str] = {"videoId": video_id}
+        if language:
+            params["lang"] = language
+
+        language_label = language or "auto"
         max_attempts = max(1, int(self.settings.RAPIDAPI_MAX_ATTEMPTS))
-        last_error: Exception | None = None
-        response: requests.Response | None = None
         for attempt in range(1, max_attempts + 1):
+            response: requests.Response | None = None
             try:
                 response = self.session.get(
                     f"{self.settings.rapidapi_base_url}/api/transcript",
@@ -70,20 +93,18 @@ class TranscriptFetcher:
                     timeout=self.settings.RAPIDAPI_TIMEOUT_SECONDS,
                 )
             except requests.Timeout as exc:
-                last_error = exc
                 if self._can_retry_attempt(attempt, max_attempts):
                     self._sleep_before_retry(attempt)
                     continue
                 raise RuntimeError(
-                    f"RapidAPI request failed after {attempt} attempts: {exc}"
+                    f"RapidAPI request failed (lang={language_label}) after {attempt} attempts: timeout: {exc}"
                 ) from exc
             except requests.RequestException as exc:
-                last_error = exc
                 if self._can_retry_attempt(attempt, max_attempts):
                     self._sleep_before_retry(attempt)
                     continue
                 raise RuntimeError(
-                    f"RapidAPI request failed after {attempt} attempts: {exc}"
+                    f"RapidAPI request failed (lang={language_label}) after {attempt} attempts: {exc}"
                 ) from exc
 
             if response.status_code in self.TRANSIENT_HTTP_STATUS_CODES:
@@ -92,39 +113,60 @@ class TranscriptFetcher:
                     continue
                 excerpt = response.text.strip()[:240]
                 raise RuntimeError(
-                    f"RapidAPI request failed after {attempt} attempts: HTTP {response.status_code} {excerpt}"
+                    f"RapidAPI request failed (lang={language_label}) after {attempt} attempts: HTTP {response.status_code} {excerpt}"
                 )
 
             if response.status_code >= 400:
                 excerpt = response.text.strip()[:240]
                 raise RuntimeError(
-                    f"RapidAPI request failed: HTTP {response.status_code} {excerpt}"
+                    f"RapidAPI request failed (lang={language_label}): HTTP {response.status_code} {excerpt}"
                 )
 
-            break
-        else:
-            message = str(last_error) if last_error else "Unknown RapidAPI request error"
-            raise RuntimeError(f"RapidAPI request failed after {max_attempts} attempts: {message}")
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise RuntimeError("RapidAPI returned non-JSON transcript data") from exc
 
-        if response is None:
-            raise RuntimeError("RapidAPI request failed: no response received")
+            if payload.get("success"):
+                return payload
 
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise RuntimeError("RapidAPI returned non-JSON transcript data") from exc
+            provider_error = (payload.get("error") or "Unknown RapidAPI transcript error").strip()
+            if (
+                self._can_retry_attempt(attempt, max_attempts)
+                and self._is_retryable_provider_error(provider_error)
+            ):
+                logger.warning(
+                    "RapidAPI provider returned retryable transcript miss for video_id=%s lang=%s attempt=%s/%s; retrying. error=%s",
+                    video_id,
+                    language_label,
+                    attempt,
+                    max_attempts,
+                    provider_error,
+                )
+                self._sleep_before_retry(attempt)
+                continue
 
-        if not payload.get("success"):
-            error = (payload.get("error") or "Unknown RapidAPI transcript error").strip()
-            raise RuntimeError(f"RapidAPI transcript fetch failed: {error}")
+            raise RuntimeError(
+                f"RapidAPI transcript fetch failed (lang={language_label}) after {attempt} attempts: {provider_error}"
+            )
 
-        transcript = payload.get("transcript")
+        raise RuntimeError(
+            f"RapidAPI request failed (lang={language_label}) after {max_attempts} attempts: unknown reason"
+        )
+
+    def _normalize_rapidapi_payload(
+        self, transcript: Any, requested_language: str | None
+    ) -> dict[str, Any]:
         if isinstance(transcript, str):
             text = transcript.strip()
             if not text:
-                raise RuntimeError("RapidAPI transcript fetch returned empty text")
+                return {
+                    "language": requested_language,
+                    "is_generated": None,
+                    "segments": [],
+                }
             return {
-                "language": preferred_language,
+                "language": requested_language,
                 "is_generated": None,
                 "segments": [
                     {
@@ -139,7 +181,7 @@ class TranscriptFetcher:
             raise RuntimeError("RapidAPI transcript response is not in the expected format")
 
         segments = []
-        transcript_language = preferred_language
+        transcript_language = requested_language
         for item in transcript:
             text = self._read_attr(item, "text", "").strip()
             if not text:
@@ -209,10 +251,11 @@ class TranscriptFetcher:
 
     @staticmethod
     def _pick_rapidapi_language(languages: list[str]) -> str | None:
-        if not languages:
-            return None
-        preferred = (languages[0] or "").strip()
-        return preferred or None
+        for language in languages:
+            normalized = (language or "").strip()
+            if normalized:
+                return normalized
+        return None
 
     def _can_retry_attempt(self, attempt: int, max_attempts: int) -> bool:
         return attempt < max_attempts
@@ -223,3 +266,7 @@ class TranscriptFetcher:
         delay = min(cap, base * (2 ** max(0, attempt - 1)))
         if delay > 0:
             time.sleep(delay)
+
+    def _is_retryable_provider_error(self, error: str) -> bool:
+        normalized = error.lower()
+        return any(marker in normalized for marker in self.RETRYABLE_PROVIDER_ERROR_MARKERS)
