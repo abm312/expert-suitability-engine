@@ -57,7 +57,7 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
     setIsExportingTranscripts(true);
     setTranscriptStatusTone('neutral');
     setTranscriptStatus(
-      `Scraping ${transcriptVideoCount} latest video transcripts. This may take a while...`
+      `Scraping ${transcriptVideoCount} latest video transcripts. This may take a few minutes...`
     );
 
     try {
