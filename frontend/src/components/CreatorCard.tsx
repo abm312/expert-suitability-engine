@@ -56,7 +56,9 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
   const handleTranscriptExport = async () => {
     setIsExportingTranscripts(true);
     setTranscriptStatusTone('neutral');
-    setTranscriptStatus(`Requesting a transcript dump for the ${transcriptVideoCount} most recent videos...`);
+    setTranscriptStatus(
+      `Scraping ${transcriptVideoCount} latest video transcripts. This may take a while...`
+    );
 
     try {
       const { blob, filename } = await api.downloadTranscriptDump({

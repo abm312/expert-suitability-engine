@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     RAPIDAPI_KEY: str = ""
     RAPIDAPI_HOST: str = "youtube-transcript3.p.rapidapi.com"
     RAPIDAPI_BASE_URL: str = ""
-    RAPIDAPI_TIMEOUT_SECONDS: float = 20.0
+    RAPIDAPI_TIMEOUT_SECONDS: float = 45.0
+    RAPIDAPI_MAX_ATTEMPTS: int = 3
+    RAPIDAPI_RETRY_BASE_SECONDS: float = 1.0
+    RAPIDAPI_RETRY_MAX_SECONDS: float = 8.0
 
     DATA_DIR: str = "./data"
     OUTPUT_DIR: str = "./dumps"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +11,8 @@ from app.core.config import Settings
 
 
 class TranscriptFetcher:
+    TRANSIENT_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.provider = self._resolve_provider()
@@ -52,19 +55,59 @@ class TranscriptFetcher:
         if preferred_language:
             params["lang"] = preferred_language
 
-        try:
-            response = self.session.get(
-                f"{self.settings.rapidapi_base_url}/api/transcript",
-                params=params,
-                headers={
-                    "x-rapidapi-host": self.settings.RAPIDAPI_HOST,
-                    "x-rapidapi-key": self.settings.RAPIDAPI_KEY,
-                },
-                timeout=self.settings.RAPIDAPI_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise RuntimeError(f"RapidAPI request failed: {exc}") from exc
+        max_attempts = max(1, int(self.settings.RAPIDAPI_MAX_ATTEMPTS))
+        last_error: Exception | None = None
+        response: requests.Response | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = self.session.get(
+                    f"{self.settings.rapidapi_base_url}/api/transcript",
+                    params=params,
+                    headers={
+                        "x-rapidapi-host": self.settings.RAPIDAPI_HOST,
+                        "x-rapidapi-key": self.settings.RAPIDAPI_KEY,
+                    },
+                    timeout=self.settings.RAPIDAPI_TIMEOUT_SECONDS,
+                )
+            except requests.Timeout as exc:
+                last_error = exc
+                if self._can_retry_attempt(attempt, max_attempts):
+                    self._sleep_before_retry(attempt)
+                    continue
+                raise RuntimeError(
+                    f"RapidAPI request failed after {attempt} attempts: {exc}"
+                ) from exc
+            except requests.RequestException as exc:
+                last_error = exc
+                if self._can_retry_attempt(attempt, max_attempts):
+                    self._sleep_before_retry(attempt)
+                    continue
+                raise RuntimeError(
+                    f"RapidAPI request failed after {attempt} attempts: {exc}"
+                ) from exc
+
+            if response.status_code in self.TRANSIENT_HTTP_STATUS_CODES:
+                if self._can_retry_attempt(attempt, max_attempts):
+                    self._sleep_before_retry(attempt)
+                    continue
+                excerpt = response.text.strip()[:240]
+                raise RuntimeError(
+                    f"RapidAPI request failed after {attempt} attempts: HTTP {response.status_code} {excerpt}"
+                )
+
+            if response.status_code >= 400:
+                excerpt = response.text.strip()[:240]
+                raise RuntimeError(
+                    f"RapidAPI request failed: HTTP {response.status_code} {excerpt}"
+                )
+
+            break
+        else:
+            message = str(last_error) if last_error else "Unknown RapidAPI request error"
+            raise RuntimeError(f"RapidAPI request failed after {max_attempts} attempts: {message}")
+
+        if response is None:
+            raise RuntimeError("RapidAPI request failed: no response received")
 
         try:
             payload = response.json()
@@ -170,3 +213,13 @@ class TranscriptFetcher:
             return None
         preferred = (languages[0] or "").strip()
         return preferred or None
+
+    def _can_retry_attempt(self, attempt: int, max_attempts: int) -> bool:
+        return attempt < max_attempts
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        base = max(0.0, float(self.settings.RAPIDAPI_RETRY_BASE_SECONDS))
+        cap = max(base, float(self.settings.RAPIDAPI_RETRY_MAX_SECONDS))
+        delay = min(cap, base * (2 ** max(0, attempt - 1)))
+        if delay > 0:
+            time.sleep(delay)
