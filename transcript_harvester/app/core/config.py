@@ -15,14 +15,16 @@ class Settings(BaseSettings):
     RAPIDAPI_KEY: str = ""
     RAPIDAPI_HOST: str = "youtube-transcript3.p.rapidapi.com"
     RAPIDAPI_BASE_URL: str = ""
-    RAPIDAPI_TIMEOUT_SECONDS: float = 45.0
-    RAPIDAPI_MAX_ATTEMPTS: int = 3
+    RAPIDAPI_TIMEOUT_SECONDS: float = 10.0
+    RAPIDAPI_MAX_ATTEMPTS: int = 1
     RAPIDAPI_RETRY_BASE_SECONDS: float = 1.0
     RAPIDAPI_RETRY_MAX_SECONDS: float = 8.0
+    RAPIDAPI_FALLBACK_TO_AUTO_LANGUAGE: bool = False
 
     DATA_DIR: str = "./data"
     OUTPUT_DIR: str = "./dumps"
     DATABASE_FILENAME: str = "transcript_harvester.db"
+    MISSING_TRANSCRIPT_CACHE_SECONDS: int = 21600
 
     DEFAULT_MAX_VIDEOS: int = 10
     DEFAULT_LANGUAGES: list[str] = ["en"]

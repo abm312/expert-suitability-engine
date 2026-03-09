@@ -35,7 +35,14 @@ class HarvestService:
 
         items: list[TranscriptVideoItem] = []
         for video in videos:
-            cached = None if request.refresh else self.store.get_cached_transcript(video["video_id"])
+            cached = (
+                None
+                if request.refresh
+                else self.store.get_cached_transcript(
+                    video["video_id"],
+                    missing_ttl_seconds=self.settings.MISSING_TRANSCRIPT_CACHE_SECONDS,
+                )
+            )
             if cached:
                 items.append(
                     TranscriptVideoItem(

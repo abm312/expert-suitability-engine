@@ -43,10 +43,12 @@ cd transcript_harvester
 - `TH_TRANSCRIPT_PROVIDER=rapidapi` forces the Solid API RapidAPI provider.
 - `TH_TRANSCRIPT_PROVIDER=youtube_transcript_api` forces the local library.
 - Reliability knobs:
-  - `TH_RAPIDAPI_TIMEOUT_SECONDS` (default `45`)
-  - `TH_RAPIDAPI_MAX_ATTEMPTS` (default `3`)
+  - `TH_RAPIDAPI_TIMEOUT_SECONDS` (default `10`)
+  - `TH_RAPIDAPI_MAX_ATTEMPTS` (default `1`)
   - `TH_RAPIDAPI_RETRY_BASE_SECONDS` (default `1`)
   - `TH_RAPIDAPI_RETRY_MAX_SECONDS` (default `8`)
+  - `TH_RAPIDAPI_FALLBACK_TO_AUTO_LANGUAGE` (default `false`)
+  - `TH_MISSING_TRANSCRIPT_CACHE_SECONDS` (default `21600`, i.e. 6h)
 
 For the RapidAPI provider shown in your dashboard:
 

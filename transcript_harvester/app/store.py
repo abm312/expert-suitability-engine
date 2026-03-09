@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -126,7 +127,11 @@ class SQLiteStore:
                     ),
                 )
 
-    def get_cached_transcript(self, video_id: str) -> Optional[dict[str, Any]]:
+    def get_cached_transcript(
+        self,
+        video_id: str,
+        missing_ttl_seconds: int = 0,
+    ) -> Optional[dict[str, Any]]:
         with self.connect() as connection:
             row = connection.execute(
                 """
@@ -137,6 +142,7 @@ class SQLiteStore:
                     v.caption_hint,
                     v.transcript_status,
                     v.transcript_error,
+                    v.last_transcript_attempt_at,
                     t.language,
                     t.is_generated,
                     t.segment_count,
@@ -149,22 +155,46 @@ class SQLiteStore:
                 (video_id,),
             ).fetchone()
 
-        if not row or not row["text"]:
+        if not row:
             return None
 
-        return {
-            "video_id": row["video_id"],
-            "title": row["title"],
-            "published_at": row["published_at"],
-            "caption_hint": bool(row["caption_hint"]),
-            "transcript_status": row["transcript_status"],
-            "transcript_error": row["transcript_error"],
-            "transcript_language": row["language"],
-            "is_generated": self._coerce_bool(row["is_generated"]),
-            "segment_count": row["segment_count"] or 0,
-            "transcript_text": row["text"],
-            "segments": json.loads(row["segments_json"]),
-        }
+        # Return successful transcript cache when available.
+        if row["text"]:
+            return {
+                "video_id": row["video_id"],
+                "title": row["title"],
+                "published_at": row["published_at"],
+                "caption_hint": bool(row["caption_hint"]),
+                "transcript_status": row["transcript_status"],
+                "transcript_error": row["transcript_error"],
+                "transcript_language": row["language"],
+                "is_generated": self._coerce_bool(row["is_generated"]),
+                "segment_count": row["segment_count"] or 0,
+                "transcript_text": row["text"],
+                "segments": json.loads(row["segments_json"]),
+            }
+
+        # Optionally return a recent "missing" result to avoid immediate re-tries.
+        if (
+            missing_ttl_seconds > 0
+            and row["transcript_status"] == "missing"
+            and self._attempt_within_ttl(row["last_transcript_attempt_at"], missing_ttl_seconds)
+        ):
+            return {
+                "video_id": row["video_id"],
+                "title": row["title"],
+                "published_at": row["published_at"],
+                "caption_hint": bool(row["caption_hint"]),
+                "transcript_status": "missing",
+                "transcript_error": row["transcript_error"],
+                "transcript_language": None,
+                "is_generated": None,
+                "segment_count": 0,
+                "transcript_text": None,
+                "segments": [],
+            }
+
+        return None
 
     def save_transcript(self, video_id: str, transcript: dict[str, Any], attempted_at: str) -> None:
         with self.connect() as connection:
@@ -280,3 +310,14 @@ class SQLiteStore:
         if value is None:
             return None
         return bool(value)
+
+    @staticmethod
+    def _attempt_within_ttl(last_attempt: Optional[str], ttl_seconds: int) -> bool:
+        if not last_attempt:
+            return False
+        try:
+            attempted = datetime.fromisoformat(last_attempt.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return False
+        age_seconds = (datetime.utcnow() - attempted).total_seconds()
+        return age_seconds <= max(0, ttl_seconds)

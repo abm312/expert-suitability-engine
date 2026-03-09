@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class TranscriptFetcher:
     TRANSIENT_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-    RETRYABLE_PROVIDER_ERROR_MARKERS = (
+    TRANSCRIPT_UNAVAILABLE_ERROR_MARKERS = (
         "not available at the moment for this video or language",
         "not available for this video or language",
     )
@@ -57,21 +57,49 @@ class TranscriptFetcher:
         if not self.settings.RAPIDAPI_KEY:
             raise RuntimeError("RAPIDAPI_KEY is not configured")
 
-        preferred_language = self._pick_rapidapi_language(languages)
-        language_label = preferred_language or "auto"
-        logger.info(
-            "RapidAPI transcript fetch start video_id=%s language=%s",
-            video_id,
-            language_label,
-        )
+        language_candidates = self._build_rapidapi_language_candidates(languages)
+        errors: list[str] = []
 
-        payload = self._request_rapidapi(video_id, preferred_language)
-        normalized = self._normalize_rapidapi_payload(payload.get("transcript"), preferred_language)
-        if not normalized["segments"]:
-            raise RuntimeError(
-                f"RapidAPI transcript fetch failed (lang={language_label}): Transcript fetch returned no segments"
+        for language in language_candidates:
+            language_label = language or "auto"
+            logger.info(
+                "RapidAPI transcript fetch start video_id=%s language=%s",
+                video_id,
+                language_label,
             )
-        return normalized
+
+            try:
+                payload = self._request_rapidapi(video_id, language)
+                normalized = self._normalize_rapidapi_payload(payload.get("transcript"), language)
+                if not normalized["segments"]:
+                    raise RuntimeError(
+                        f"RapidAPI transcript fetch failed (lang={language_label}): Transcript fetch returned no segments"
+                    )
+                return normalized
+            except Exception as exc:
+                message = str(exc).strip()
+                errors.append(f"{language_label}: {message}")
+
+                # If a language-specific miss happens, try one final "auto" call before failing.
+                if (
+                    language is not None
+                    and self.settings.RAPIDAPI_FALLBACK_TO_AUTO_LANGUAGE
+                    and self._is_transcript_unavailable_error(message)
+                ):
+                    logger.warning(
+                        "RapidAPI transcript miss for video_id=%s lang=%s; retrying once with auto language.",
+                        video_id,
+                        language_label,
+                    )
+                    continue
+
+                # For other errors, stop immediately unless another language candidate exists.
+                if language == language_candidates[-1]:
+                    break
+
+        raise RuntimeError(
+            f"RapidAPI transcript fetch failed for video_id={video_id}: {' | '.join(errors)}"
+        )
 
     def _request_rapidapi(self, video_id: str, language: str | None) -> dict[str, Any]:
         params: dict[str, str] = {"videoId": video_id}
@@ -131,20 +159,6 @@ class TranscriptFetcher:
                 return payload
 
             provider_error = (payload.get("error") or "Unknown RapidAPI transcript error").strip()
-            if (
-                self._can_retry_attempt(attempt, max_attempts)
-                and self._is_retryable_provider_error(provider_error)
-            ):
-                logger.warning(
-                    "RapidAPI provider returned retryable transcript miss for video_id=%s lang=%s attempt=%s/%s; retrying. error=%s",
-                    video_id,
-                    language_label,
-                    attempt,
-                    max_attempts,
-                    provider_error,
-                )
-                self._sleep_before_retry(attempt)
-                continue
 
             raise RuntimeError(
                 f"RapidAPI transcript fetch failed (lang={language_label}) after {attempt} attempts: {provider_error}"
@@ -249,13 +263,23 @@ class TranscriptFetcher:
             return item.get(key, default)
         return getattr(item, key, default)
 
-    @staticmethod
-    def _pick_rapidapi_language(languages: list[str]) -> str | None:
+    def _build_rapidapi_language_candidates(self, languages: list[str]) -> list[str | None]:
+        candidates: list[str | None] = []
+        seen: set[str | None] = set()
+
         for language in languages:
             normalized = (language or "").strip()
-            if normalized:
-                return normalized
-        return None
+            if normalized and normalized not in seen:
+                candidates.append(normalized)
+                seen.add(normalized)
+
+        if self.settings.RAPIDAPI_FALLBACK_TO_AUTO_LANGUAGE and None not in seen:
+            candidates.append(None)
+
+        if not candidates:
+            candidates.append(None)
+
+        return candidates
 
     def _can_retry_attempt(self, attempt: int, max_attempts: int) -> bool:
         return attempt < max_attempts
@@ -267,6 +291,6 @@ class TranscriptFetcher:
         if delay > 0:
             time.sleep(delay)
 
-    def _is_retryable_provider_error(self, error: str) -> bool:
+    def _is_transcript_unavailable_error(self, error: str) -> bool:
         normalized = error.lower()
-        return any(marker in normalized for marker in self.RETRYABLE_PROVIDER_ERROR_MARKERS)
+        return any(marker in normalized for marker in self.TRANSCRIPT_UNAVAILABLE_ERROR_MARKERS)
