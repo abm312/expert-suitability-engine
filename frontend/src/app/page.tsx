@@ -213,11 +213,11 @@ export default function Home() {
                 </div>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Total in Database</span>
+                    <span className="text-gray-400">Search Candidates</span>
                     <span className="text-gray-200 font-mono">{results.total_results}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Matched Filters</span>
+                    <span className="text-gray-400">After Filters</span>
                     <span className="text-gray-200 font-mono">{results.filtered_count}</span>
                   </div>
                   <div className="flex justify-between">
@@ -344,4 +344,3 @@ export default function Home() {
     </div>
   );
 }
-

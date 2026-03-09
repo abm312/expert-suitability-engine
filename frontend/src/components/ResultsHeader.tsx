@@ -43,7 +43,7 @@ export function ResultsHeader({
           {filteredCount} experts found
           {totalResults !== filteredCount && (
             <span className="text-gray-600">
-              (of {totalResults} in database)
+              (of {totalResults} candidates)
             </span>
           )}
         </span>
@@ -61,4 +61,3 @@ export function ResultsHeader({
     </div>
   );
 }
-

@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 import re
 import logging
@@ -49,32 +49,21 @@ class CreatorService:
         self.scoring = ScoringEngine()
         self.filters = FilterService()
         self.explainability = ExplainabilityService()
-    
-    async def discover_creators(
+
+    async def _upsert_channels(
         self,
         db: AsyncSession,
-        query: str,
-        max_results: int = 50,
+        channels: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """
-        Discover new creators via YouTube search and add to database.
-        """
-        logger.info(f"📺 DISCOVER: Searching YouTube for '{query}' (max {max_results} results)")
+        """Insert newly discovered channels and their recent videos into the database."""
+        added = []
+        logger.info(f"   → Processing {len(channels)} channels...")
+        for idx, channel in enumerate(channels, 1):
+            channel_id = channel["channel_id"]
+            channel_name = channel.get("channel_name", "Unknown")
+            logger.info(f"   [{idx}/{len(channels)}] Processing: {channel_name} ({channel_id})")
 
-        try:
-            # Search YouTube
-            logger.info("   → Calling YouTube API search_channels()...")
-            channels = await self.youtube.search_channels(query, max_results)
-            logger.info(f"   ✓ Found {len(channels)} channels from YouTube")
-
-            added = []
-            logger.info(f"   → Processing {len(channels)} channels...")
-
-            for idx, channel in enumerate(channels, 1):
-                channel_id = channel["channel_id"]
-                channel_name = channel.get("channel_name", "Unknown")
-                logger.info(f"   [{idx}/{len(channels)}] Processing: {channel_name} ({channel_id})")
-
+            try:
                 # Check if already exists
                 result = await db.execute(
                     select(Creator).where(Creator.channel_id == channel_id)
@@ -82,23 +71,22 @@ class CreatorService:
                 existing = result.scalar_one_or_none()
 
                 if existing:
-                    logger.info(f"      ↷ Already in database, skipping")
+                    logger.info("      ↷ Already in database, skipping")
                     continue
 
                 # Fetch full details
-                logger.info(f"      → Fetching channel details...")
+                logger.info("      → Fetching channel details...")
                 details = await self.youtube.get_channel_details(channel_id)
                 if not details:
-                    logger.warning(f"      ⚠ Failed to get channel details, skipping")
+                    logger.warning("      ⚠ Failed to get channel details, skipping")
                     continue
                 logger.info(f"      ✓ Got details: {details.get('total_subscribers', 0)} subscribers")
-
 
                 # Parse channel created date safely
                 channel_created = parse_datetime_safe(details.get("channel_created_date"))
 
                 # Create creator
-                logger.info(f"      → Creating creator in database...")
+                logger.info("      → Creating creator in database...")
                 creator = Creator(
                     channel_id=channel_id,
                     channel_name=details["channel_name"],
@@ -117,13 +105,11 @@ class CreatorService:
                 logger.info(f"      ✓ Creator saved (ID: {creator.id})")
 
                 # Fetch videos
-                logger.info(f"      → Fetching videos (up to 30)...")
+                logger.info("      → Fetching videos (up to 30)...")
                 videos_data = await self.youtube.get_channel_videos(channel_id, max_results=30)
                 logger.info(f"      ✓ Got {len(videos_data)} videos")
 
-                # Process each video
                 for v in videos_data:
-                    # Parse published date safely
                     video_published = parse_datetime_safe(v.get("published_at"))
 
                     video = Video(
@@ -142,7 +128,6 @@ class CreatorService:
                     )
                     db.add(video)
 
-                # Create initial metrics snapshot
                 snapshot = MetricsSnapshot(
                     creator_id=creator.id,
                     date=date.today(),
@@ -151,6 +136,7 @@ class CreatorService:
                     video_count=creator.total_videos,
                 )
                 db.add(snapshot)
+                await db.commit()
 
                 logger.info(f"      → Saved {len(videos_data)} videos and metrics snapshot")
                 added.append({
@@ -158,17 +144,38 @@ class CreatorService:
                     "channel_name": details["channel_name"],
                     "subscribers": details.get("total_subscribers", 0),
                 })
-                logger.info(f"      ✓ Channel fully processed!")
+                logger.info("      ✓ Channel fully processed!")
+            except Exception as channel_error:
+                await db.rollback()
+                logger.warning(f"      ⚠ Failed to process channel {channel_id}: {channel_error}")
+                continue
 
-            logger.info(f"   → Committing {len(added)} new creators to database...")
-            await db.commit()
+        logger.info(f"   ✓ Upsert complete: added {len(added)} new creators")
+        return added
+    
+    async def discover_creators(
+        self,
+        db: AsyncSession,
+        query: str,
+        max_results: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        Discover new creators via YouTube search and add to database.
+        """
+        logger.info(f"📺 DISCOVER: Searching YouTube for '{query}' (max {max_results} results)")
+
+        try:
+            # Search YouTube
+            logger.info("   → Calling YouTube API search_channels()...")
+            channels = await self.youtube.search_channels(query, max_results)
+            logger.info(f"   ✓ Found {len(channels)} channels from YouTube")
+            added = await self._upsert_channels(db, channels)
             logger.info(f"✅ DISCOVER COMPLETE: Added {len(added)} new creators")
             return added
 
         except Exception as e:
             logger.error(f"❌ DISCOVER ERROR: {str(e)}")
             logger.error(f"Full traceback:\n{traceback.format_exc()}")
-            await db.rollback()
             raise
     
     async def search_creators(
@@ -201,30 +208,52 @@ class CreatorService:
                 logger.warning(f"   ⚠ Embedding failed: {e}, falling back to keyword matching")
                 pass  # Fall back to keyword matching
 
-            # AUTO-DISCOVER: Search YouTube for new creators (limited to 20 for speed)
-            logger.info(f"Step 2: Auto-discovering creators from YouTube")
-            update("searching", "youtube", f"Searching YouTube for channels...")
+            # Step 2: Discover channels for this query and ensure they exist in DB
+            logger.info("Step 2: Discovering channels from YouTube for this query")
+            update("searching", "youtube", "Searching YouTube for matching channels...")
+            candidate_channels: List[Dict[str, Any]] = []
+            candidate_channel_ids: List[str] = []
             try:
+                candidate_channels = await self.youtube.search_channels(request.topic_query, max_results=20)
+                candidate_channel_ids = list(dict.fromkeys(
+                    channel.get("channel_id")
+                    for channel in candidate_channels
+                    if channel.get("channel_id")
+                ))
+                logger.info(f"   ✓ YouTube returned {len(candidate_channel_ids)} candidate channels")
+
                 update("searching", "populating", "Fetching channel data and videos...")
-                await self.discover_creators(db, request.topic_query, max_results=20)
-                logger.info(f"   ✓ Discovery completed")
+                await self._upsert_channels(db, candidate_channels)
+                logger.info("   ✓ Discovery completed")
             except Exception as e:
                 logger.error(f"   ❌ Discovery error: {e}")
                 logger.error(f"   Traceback:\n{traceback.format_exc()}")
-                # Continue anyway with existing creators in DB
+                # Continue only with existing creators that match the discovered candidate IDs
 
+            # Fetch only creators discovered for this query
+            logger.info("Step 3: Fetching query-matched creators from database")
+            if not candidate_channel_ids:
+                logger.warning("   ⚠ No candidate channels found from YouTube search, returning empty results")
+                return {
+                    "query": request.topic_query,
+                    "total_results": 0,
+                    "filtered_count": 0,
+                    "creators": [],
+                    "metrics_used": [],
+                    "filters_applied": {},
+                    "processing_time_ms": (time.time() - start_time) * 1000,
+                }
 
-            # Fetch all creators with their data
-            logger.info(f"Step 3: Fetching all creators from database with videos and metrics")
             result = await db.execute(
                 select(Creator)
                 .options(
                     selectinload(Creator.videos).selectinload(Video.transcript),
                     selectinload(Creator.metrics_snapshots)
                 )
+                .where(Creator.channel_id.in_(candidate_channel_ids))
             )
             creators = result.scalars().all()
-            logger.info(f"   ✓ Fetched {len(creators)} creators from database")
+            logger.info(f"   ✓ Fetched {len(creators)} query-matched creators from database")
 
             if not creators:
                 logger.warning(f"   ⚠ No creators in database, returning empty results")
@@ -595,4 +624,3 @@ class CreatorService:
         
         await db.commit()
         return True
-
