@@ -259,6 +259,44 @@
       gap: 12px;
     }
 
+    .analysis-panel {
+      display: none;
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .analysis-panel.visible {
+      display: block;
+    }
+
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .analysis-card {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .analysis-card-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .analysis-card-value {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
     .video {
       padding: 14px;
       border-radius: 14px;
@@ -373,7 +411,7 @@
           <div class="row">
             <div class="field">
               <label for="max-videos">Max Videos</label>
-              <input id="max-videos" name="max_videos" type="number" min="1" max="50" value="5">
+              <input id="max-videos" name="max_videos" type="number" min="1" max="50" value="3">
             </div>
             <div class="field">
               <label for="languages">Languages</label>
@@ -383,6 +421,7 @@
 
           <div class="actions">
             <button class="primary" id="run-button" type="submit">Fetch Transcripts</button>
+            <button class="secondary" id="analyze-button" type="button" disabled>Analyze Communication</button>
             <button class="secondary" id="download-button" type="button" disabled>Download JSON</button>
           </div>
         </form>
@@ -415,6 +454,25 @@
           </div>
 
           <div class="results" id="results"></div>
+          <div class="analysis-panel" id="analysis-panel">
+            <div class="stat-label">Communication Snapshot</div>
+            <div class="stat-value" id="analysis-summary">-</div>
+            <div class="analysis-grid">
+              <div class="analysis-card">
+                <div class="analysis-card-label">Transcript Word Count</div>
+                <div class="analysis-card-value" id="analysis-word-count">0</div>
+              </div>
+              <div class="analysis-card">
+                <div class="analysis-card-label">Filler Word Ratio</div>
+                <div class="analysis-card-value" id="analysis-filler-ratio">0%</div>
+              </div>
+              <div class="analysis-card">
+                <div class="analysis-card-label">Avg Sentence Length</div>
+                <div class="analysis-card-value" id="analysis-sentence-length">0 words</div>
+              </div>
+            </div>
+            <p class="footer-note" id="analysis-top-fillers"></p>
+          </div>
         </div>
       </section>
     </div>
@@ -423,15 +481,23 @@
   <script>
     const form = document.getElementById('harvest-form');
     const runButton = document.getElementById('run-button');
+    const analyzeButton = document.getElementById('analyze-button');
     const downloadButton = document.getElementById('download-button');
     const statusList = document.getElementById('status-list');
     const summary = document.getElementById('summary');
     const results = document.getElementById('results');
+    const analysisPanel = document.getElementById('analysis-panel');
+    const analysisSummary = document.getElementById('analysis-summary');
+    const analysisWordCount = document.getElementById('analysis-word-count');
+    const analysisFillerRatio = document.getElementById('analysis-filler-ratio');
+    const analysisSentenceLength = document.getElementById('analysis-sentence-length');
+    const analysisTopFillers = document.getElementById('analysis-top-fillers');
     const summaryChannel = document.getElementById('summary-channel');
     const summaryTotal = document.getElementById('summary-total');
     const summaryFound = document.getElementById('summary-found');
 
     let lastPayload = null;
+    let lastDump = null;
     let busyInterval = null;
 
     function resetStatus() {
@@ -475,7 +541,7 @@
       const channelId = document.getElementById('channel-id').value.trim();
       const channelUrl = document.getElementById('channel-url').value.trim();
       const searchQuery = document.getElementById('search-query').value.trim();
-      const maxVideos = Number(document.getElementById('max-videos').value || '5');
+      const maxVideos = Number(document.getElementById('max-videos').value || '3');
       const languages = document.getElementById('languages').value
         .split(',')
         .map((value) => value.trim())
@@ -537,7 +603,10 @@
       event.preventDefault();
       resetStatus();
       summary.classList.remove('visible');
+      analysisPanel.classList.remove('visible');
       results.innerHTML = '';
+      lastDump = null;
+      analyzeButton.disabled = true;
       downloadButton.disabled = true;
 
       const payload = getPayload();
@@ -562,9 +631,11 @@
         }
 
         const data = await response.json();
+        lastDump = data;
         addStatus(`Channel resolved: ${data.channel_name}.`, 'done');
         addStatus(`Transcript fetch finished. ${data.transcripts_found} of ${data.videos.length} videos returned transcripts.`, 'done');
         renderResults(data);
+        analyzeButton.disabled = data.transcripts_found === 0;
         downloadButton.disabled = false;
       } catch (error) {
         clearInterval(busyInterval);
@@ -576,29 +647,21 @@
     }
 
     async function downloadDump() {
-      if (!lastPayload) {
+      if (!lastDump) {
         return;
       }
 
-      addStatus('Requesting downloadable JSON dump.', 'pending');
+      addStatus('Preparing downloadable JSON dump.', 'pending');
       try {
-        const response = await fetch('/api/v1/transcripts/download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(lastPayload)
-        });
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({ detail: 'Download failed' }));
-          addStatus(`Download failed: ${error.detail || 'Unknown error'}`, 'error');
-          return;
-        }
-
-        const blob = await response.blob();
+        const slug = (lastDump.channel_name || 'transcript-dump')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '') || 'transcript-dump';
+        const blob = new Blob([JSON.stringify(lastDump, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;
-        anchor.download = 'transcript-dump.json';
+        anchor.download = `${slug}-transcripts.json`;
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
@@ -609,7 +672,45 @@
       }
     }
 
+    async function analyzeDump() {
+      if (!lastDump) {
+        return;
+      }
+
+      addStatus('Analyzing communication patterns from the fetched transcripts.', 'pending');
+      analyzeButton.disabled = true;
+      try {
+        const response = await fetch('/api/v1/transcripts/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(lastDump)
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: 'Analysis failed' }));
+          addStatus(`Analysis failed: ${error.detail || 'Unknown error'}`, 'error');
+          return;
+        }
+
+        const report = await response.json();
+        analysisPanel.classList.add('visible');
+        analysisSummary.textContent = report.summary;
+        analysisWordCount.textContent = String(report.total_word_count);
+        analysisFillerRatio.textContent = `${(report.filler_word_ratio * 100).toFixed(2)}%`;
+        analysisSentenceLength.textContent = `${report.average_sentence_length.toFixed(1)} words`;
+        analysisTopFillers.textContent = report.top_filler_words.length
+          ? `Top fillers: ${report.top_filler_words.map((item) => `${item.term} (${item.count})`).join(', ')}`
+          : 'Top fillers: none detected in the available transcript text.';
+        addStatus('Communication analysis ready.', 'done');
+      } catch (error) {
+        addStatus(`Analysis error: ${error.message}`, 'error');
+      } finally {
+        analyzeButton.disabled = false;
+      }
+    }
+
     form.addEventListener('submit', runDump);
+    analyzeButton.addEventListener('click', analyzeDump);
     downloadButton.addEventListener('click', downloadDump);
   </script>
 </body>

@@ -15,7 +15,12 @@ import {
   Zap,
   Download
 } from 'lucide-react';
-import { CreatorCard as CreatorCardType, MetricType } from '@/types';
+import {
+  CreatorCard as CreatorCardType,
+  MetricType,
+  TranscriptDumpResponse,
+  CommunicationAnalysisResponse,
+} from '@/types';
 import { cn, formatNumber, formatScore, getScoreColor, getScoreBgColor, getGrowthIcon, getLinkIcon, getDomainFromUrl } from '@/lib/utils';
 import { ScoreRing } from './ScoreRing';
 import { api } from '@/lib/api';
@@ -44,8 +49,11 @@ const METRIC_ICONS: Record<MetricType, string> = {
 export function CreatorCard({ creator, rank }: CreatorCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [transcriptApiBase, setTranscriptApiBase] = useState<string | null>(null);
-  const [transcriptVideoCount, setTranscriptVideoCount] = useState(5);
-  const [isExportingTranscripts, setIsExportingTranscripts] = useState(false);
+  const [transcriptVideoCount, setTranscriptVideoCount] = useState(3);
+  const [isFetchingTranscripts, setIsFetchingTranscripts] = useState(false);
+  const [isAnalyzingCommunication, setIsAnalyzingCommunication] = useState(false);
+  const [transcriptDump, setTranscriptDump] = useState<TranscriptDumpResponse | null>(null);
+  const [communicationReport, setCommunicationReport] = useState<CommunicationAnalysisResponse | null>(null);
   const [transcriptStatus, setTranscriptStatus] = useState<string | null>(null);
   const [transcriptStatusTone, setTranscriptStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral');
 
@@ -53,30 +61,26 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
     setTranscriptApiBase(api.getTranscriptApiBase());
   }, []);
 
-  const handleTranscriptExport = async () => {
-    setIsExportingTranscripts(true);
+  const handleTranscriptFetch = async () => {
+    setIsFetchingTranscripts(true);
     setTranscriptStatusTone('neutral');
+    setTranscriptDump(null);
+    setCommunicationReport(null);
     setTranscriptStatus(
       `Scraping ${transcriptVideoCount} latest video transcripts. This may take a few minutes...`
     );
 
     try {
-      const { blob, filename } = await api.downloadTranscriptDump({
+      const dump = await api.fetchTranscriptDump({
         channelId: creator.channel_id,
         maxVideos: transcriptVideoCount,
       });
-
-      const downloadUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = downloadUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(downloadUrl);
+      setTranscriptDump(dump);
 
       setTranscriptStatusTone('success');
-      setTranscriptStatus(`Download started: ${filename}`);
+      setTranscriptStatus(
+        `Fetched ${dump.transcripts_found} of ${dump.videos.length} transcripts. You can now analyze communication or download the raw JSON.`
+      );
     } catch (err) {
       setTranscriptStatusTone('error');
       setTranscriptStatus(
@@ -85,8 +89,56 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
           : 'Transcript scraper request failed. Make sure the transcript scraper service is reachable.'
       );
     } finally {
-      setIsExportingTranscripts(false);
+      setIsFetchingTranscripts(false);
     }
+  };
+
+  const handleCommunicationAnalysis = async () => {
+    if (!transcriptDump) {
+      return;
+    }
+
+    setIsAnalyzingCommunication(true);
+    setTranscriptStatusTone('neutral');
+    setTranscriptStatus('Analyzing communication patterns from the fetched transcripts...');
+
+    try {
+      const report = await api.analyzeTranscriptCommunication(transcriptDump);
+      setCommunicationReport(report);
+      setTranscriptStatusTone('success');
+      setTranscriptStatus('Communication analysis ready.');
+    } catch (err) {
+      setTranscriptStatusTone('error');
+      setTranscriptStatus(
+        err instanceof Error
+          ? err.message
+          : 'Communication analysis failed.'
+      );
+    } finally {
+      setIsAnalyzingCommunication(false);
+    }
+  };
+
+  const handleTranscriptDownload = async () => {
+    if (!transcriptDump) {
+      return;
+    }
+
+    const fileName = `${creator.channel_name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-transcripts.json`;
+    const blob = new Blob([JSON.stringify(transcriptDump, null, 2)], {
+      type: 'application/json',
+    });
+    const downloadUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = downloadUrl;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(downloadUrl);
+
+    setTranscriptStatusTone('success');
+    setTranscriptStatus(`Download started: ${fileName}`);
   };
 
   return (
@@ -228,18 +280,43 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
                   </label>
                   <button
                     type="button"
-                    onClick={handleTranscriptExport}
-                    disabled={isExportingTranscripts}
-                    className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={handleTranscriptFetch}
+                    disabled={isFetchingTranscripts}
+                    className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-w-[180px]"
                   >
-                    {isExportingTranscripts ? (
+                    {isFetchingTranscripts ? (
                       <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
                     ) : (
                       <Download className="w-4 h-4" />
                     )}
-                    <span>{isExportingTranscripts ? 'Downloading...' : 'Download Raw Transcripts'}</span>
+                    <span>{isFetchingTranscripts ? 'Fetching...' : transcriptDump ? 'Re-fetch Transcripts' : 'Fetch Transcripts'}</span>
                   </button>
                 </div>
+                {transcriptDump && (
+                  <div className="mt-3 flex flex-col sm:flex-row gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCommunicationAnalysis}
+                      disabled={isAnalyzingCommunication || transcriptDump.transcripts_found === 0}
+                      className="btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isAnalyzingCommunication ? (
+                        <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <MessageSquare className="w-4 h-4" />
+                      )}
+                      <span>{isAnalyzingCommunication ? 'Analyzing...' : 'Analyze Communication'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTranscriptDownload}
+                      className="btn-secondary flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download Raw Transcripts</span>
+                    </button>
+                  </div>
+                )}
                 {transcriptStatus && (
                   <p
                     className={cn(
@@ -253,6 +330,40 @@ export function CreatorCard({ creator, rank }: CreatorCardProps) {
                   >
                     {transcriptStatus}
                   </p>
+                )}
+                {communicationReport && (
+                  <div className="mt-3 rounded-xl border border-white/5 bg-slate-900/35 p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <MessageSquare className="w-4 h-4 text-ocean-400" />
+                      <span className="text-sm font-medium text-gray-200">Communication Snapshot</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-3">{communicationReport.summary}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="rounded-lg border border-white/5 bg-slate-800/45 p-3">
+                        <div className="text-gray-500 mb-1">Transcript Word Count</div>
+                        <div className="text-gray-100 text-base font-semibold">
+                          {formatNumber(communicationReport.total_word_count)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-slate-800/45 p-3">
+                        <div className="text-gray-500 mb-1">Filler Word Ratio</div>
+                        <div className="text-gray-100 text-base font-semibold">
+                          {(communicationReport.filler_word_ratio * 100).toFixed(2)}%
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-slate-800/45 p-3">
+                        <div className="text-gray-500 mb-1">Avg Sentence Length</div>
+                        <div className="text-gray-100 text-base font-semibold">
+                          {communicationReport.average_sentence_length.toFixed(1)} words
+                        </div>
+                      </div>
+                    </div>
+                    {communicationReport.top_filler_words.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-3">
+                        Top fillers: {communicationReport.top_filler_words.map((item) => `${item.term} (${item.count})`).join(', ')}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}

@@ -1,4 +1,10 @@
-import { SearchRequest, SearchResponse, CreatorCard } from '@/types';
+import {
+  SearchRequest,
+  SearchResponse,
+  CreatorCard,
+  TranscriptDumpResponse,
+  CommunicationAnalysisResponse,
+} from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://ese-backend-61as.onrender.com/api/v1';
 const LOCAL_TRANSCRIPT_API_BASE = 'http://127.0.0.1:8100/api/v1';
@@ -122,7 +128,87 @@ export const api = {
   // Resolve transcript service base URL (local-only unless explicitly configured)
   getTranscriptApiBase,
 
-  // Download transcript dump JSON from the standalone transcript service
+  // Fetch transcript dump JSON from the standalone transcript service
+  fetchTranscriptDump: async (params: { channelId: string; maxVideos: number }) => {
+    const transcriptBase = getTranscriptApiBase();
+
+    if (!transcriptBase) {
+      throw new APIError(
+        0,
+        'Transcript scraper is only available when NEXT_PUBLIC_TRANSCRIPT_API_URL is configured.'
+      );
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${transcriptBase}/transcripts/dump`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channel_id: params.channelId,
+          max_videos: params.maxVideos,
+          languages: ['en'],
+          refresh: false,
+          persist_dump_file: false,
+        }),
+      });
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new APIError(
+          0,
+          'Cannot reach the transcript scraper service. Make sure it is running and reachable.'
+        );
+      }
+      throw err;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Transcript scraper request failed' }));
+      throw new APIError(response.status, error.detail || 'Transcript scraper request failed');
+    }
+
+    return response.json() as Promise<TranscriptDumpResponse>;
+  },
+
+  analyzeTranscriptCommunication: async (dump: TranscriptDumpResponse) => {
+    const transcriptBase = getTranscriptApiBase();
+
+    if (!transcriptBase) {
+      throw new APIError(
+        0,
+        'Transcript scraper is only available when NEXT_PUBLIC_TRANSCRIPT_API_URL is configured.'
+      );
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${transcriptBase}/transcripts/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(dump),
+      });
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new APIError(
+          0,
+          'Cannot reach the transcript scraper service. Make sure it is running and reachable.'
+        );
+      }
+      throw err;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Communication analysis failed' }));
+      throw new APIError(response.status, error.detail || 'Communication analysis failed');
+    }
+
+    return response.json() as Promise<CommunicationAnalysisResponse>;
+  },
+
   downloadTranscriptDump: async (params: { channelId: string; maxVideos: number }) => {
     const transcriptBase = getTranscriptApiBase();
 

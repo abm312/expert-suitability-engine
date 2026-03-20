@@ -10,7 +10,7 @@ class TranscriptDumpRequest(BaseModel):
     channel_handle: Optional[str] = None
     search_query: Optional[str] = None
 
-    max_videos: int = Field(default=10, ge=1, le=50)
+    max_videos: int = Field(default=3, ge=1, le=50)
     languages: list[str] = Field(default_factory=lambda: ["en"])
     refresh: bool = False
     persist_dump_file: bool = False
@@ -67,3 +67,36 @@ class CachedTranscriptResponse(BaseModel):
     channel_id: str
     channel_name: str
     videos: list[TranscriptVideoItem]
+
+
+class FillerWordStat(BaseModel):
+    term: str
+    count: int
+
+
+class CommunicationVideoAnalysis(BaseModel):
+    video_id: str
+    title: str
+    transcript_status: str
+    word_count: int = 0
+    sentence_count: int = 0
+    average_sentence_length: float = 0.0
+    filler_word_count: int = 0
+    filler_word_ratio: float = 0.0
+    top_filler_words: list[FillerWordStat] = Field(default_factory=list)
+
+
+class CommunicationAnalysisResponse(BaseModel):
+    channel_id: str
+    channel_name: str
+    analyzed_at: datetime
+    total_videos_considered: int
+    transcripts_analyzed: int
+    total_word_count: int
+    total_sentence_count: int
+    average_sentence_length: float
+    filler_word_count: int
+    filler_word_ratio: float
+    top_filler_words: list[FillerWordStat] = Field(default_factory=list)
+    summary: str
+    videos: list[CommunicationVideoAnalysis]

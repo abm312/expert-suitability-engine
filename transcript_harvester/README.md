@@ -34,21 +34,37 @@ cd transcript_harvester
 
 ```bash
 cd transcript_harvester
-../.venv/bin/python -m app.cli dump --channel-id UC_x5XG1OV2P6uZZ5FSM9Ttw --max-videos 5
+../.venv/bin/python -m app.cli dump --channel-id UC_x5XG1OV2P6uZZ5FSM9Ttw --max-videos 3
 ```
 
 ## Transcript Providers
 
-- `TH_TRANSCRIPT_PROVIDER=auto` uses RapidAPI when `TH_RAPIDAPI_KEY` is set, otherwise it falls back to the local `youtube-transcript-api` library.
+- `TH_TRANSCRIPT_PROVIDER=auto` prefers Supadata when `TH_SUPADATA_API_KEY` is set, then RapidAPI when `TH_RAPIDAPI_KEY` is set, otherwise it falls back to the local `youtube-transcript-api` library.
+- `TH_TRANSCRIPT_PROVIDER=supadata` forces the Supadata provider.
 - `TH_TRANSCRIPT_PROVIDER=rapidapi` forces the Solid API RapidAPI provider.
 - `TH_TRANSCRIPT_PROVIDER=youtube_transcript_api` forces the local library.
 - Reliability knobs:
+  - `TH_SUPADATA_MODE` (`auto`, `native`, or `generate`)
+  - `TH_SUPADATA_TIMEOUT_SECONDS` (default `30`)
+  - `TH_SUPADATA_MAX_ATTEMPTS` (default `3`)
+  - `TH_SUPADATA_RETRY_BASE_SECONDS` (default `1`)
+  - `TH_SUPADATA_RETRY_MAX_SECONDS` (default `8`)
+  - `TH_SUPADATA_POLL_INTERVAL_SECONDS` (default `1`)
+  - `TH_SUPADATA_MAX_POLL_ATTEMPTS` (default `90`)
   - `TH_RAPIDAPI_TIMEOUT_SECONDS` (default `10`)
   - `TH_RAPIDAPI_MAX_ATTEMPTS` (default `1`)
   - `TH_RAPIDAPI_RETRY_BASE_SECONDS` (default `1`)
   - `TH_RAPIDAPI_RETRY_MAX_SECONDS` (default `8`)
   - `TH_RAPIDAPI_FALLBACK_TO_AUTO_LANGUAGE` (default `false`)
   - `TH_MISSING_TRANSCRIPT_CACHE_SECONDS` (default `21600`, i.e. 6h)
+
+For Supadata:
+
+```bash
+TH_TRANSCRIPT_PROVIDER=supadata
+TH_SUPADATA_API_KEY=your_supadata_api_key
+TH_SUPADATA_MODE=auto
+```
 
 For the RapidAPI provider shown in your dashboard:
 
@@ -69,6 +85,7 @@ TH_RAPIDAPI_HOST=youtube-transcript3.p.rapidapi.com
 - `GET /health`
 - `POST /api/v1/transcripts/dump`
 - `POST /api/v1/transcripts/download`
+- `POST /api/v1/transcripts/analyze`
 - `GET /api/v1/channels/{channel_id}/transcripts/cached`
 
 ## Why This Fits The Existing Webapp Later

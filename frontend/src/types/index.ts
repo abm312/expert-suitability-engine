@@ -71,6 +71,71 @@ export interface SearchResponse {
   processing_time_ms: number;
 }
 
+export interface TranscriptSegment {
+  text: string;
+  start: number;
+  duration: number;
+}
+
+export interface TranscriptVideoItem {
+  video_id: string;
+  title: string;
+  published_at?: string | null;
+  caption_hint: boolean;
+  transcript_status: string;
+  transcript_error?: string | null;
+  transcript_language?: string | null;
+  is_generated?: boolean | null;
+  segment_count: number;
+  transcript_text?: string | null;
+  segments: TranscriptSegment[];
+  fetched_from_cache: boolean;
+}
+
+export interface TranscriptDumpResponse {
+  channel_id: string;
+  channel_name: string;
+  requested_at: string;
+  max_videos: number;
+  languages: string[];
+  transcripts_found: number;
+  dump_file?: string | null;
+  videos: TranscriptVideoItem[];
+}
+
+export interface FillerWordStat {
+  term: string;
+  count: number;
+}
+
+export interface CommunicationVideoAnalysis {
+  video_id: string;
+  title: string;
+  transcript_status: string;
+  word_count: number;
+  sentence_count: number;
+  average_sentence_length: number;
+  filler_word_count: number;
+  filler_word_ratio: number;
+  top_filler_words: FillerWordStat[];
+}
+
+export interface CommunicationAnalysisResponse {
+  channel_id: string;
+  channel_name: string;
+  analyzed_at: string;
+  total_videos_considered: number;
+  transcripts_analyzed: number;
+  total_word_count: number;
+  total_sentence_count: number;
+  average_sentence_length: number;
+  filler_word_count: number;
+  filler_word_ratio: number;
+  top_filler_words: FillerWordStat[];
+  summary: string;
+  videos: CommunicationVideoAnalysis[];
+}
+
 export interface MetricInfo {
   id: MetricType;
   name: string;
@@ -118,4 +183,3 @@ export const METRIC_INFO: MetricInfo[] = [
     default_weight: 0.2,
   },
 ];
-

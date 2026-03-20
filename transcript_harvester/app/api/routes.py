@@ -4,12 +4,14 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from app.core.config import get_settings
-from app.schemas import TranscriptDumpRequest
+from app.schemas import TranscriptDumpRequest, TranscriptDumpResponse
+from app.services.communication_analyzer import CommunicationAnalyzer
 from app.services.harvest_service import HarvestService
 
 
 settings = get_settings()
 service = HarvestService(settings)
+analyzer = CommunicationAnalyzer()
 
 router = APIRouter()
 
@@ -51,10 +53,18 @@ def download_transcript_dump(request: TranscriptDumpRequest):
     )
 
 
+@router.post("/transcripts/analyze")
+def analyze_transcript_dump(dump: TranscriptDumpResponse):
+    try:
+        return analyzer.analyze_dump(dump)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/channels/{channel_id}/transcripts/cached")
 def get_cached_transcripts(
     channel_id: str,
-    max_videos: int = Query(default=10, ge=1, le=50),
+    max_videos: int = Query(default=3, ge=1, le=50),
 ):
     try:
         return service.get_cached_transcripts(channel_id, max_videos)
