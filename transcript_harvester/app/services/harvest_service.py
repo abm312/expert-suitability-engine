@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,9 @@ from app.services.youtube_catalog import YouTubeCatalogService
 from app.store import SQLiteStore
 
 
+logger = logging.getLogger(__name__)
+
+
 class HarvestService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -20,15 +24,43 @@ class HarvestService:
         self.transcripts = TranscriptFetcher(settings)
 
         Path(settings.OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "HarvestService initialized provider=%s missing_transcript_cache_seconds=%s database_path=%s",
+            self.transcripts.provider,
+            self.settings.MISSING_TRANSCRIPT_CACHE_SECONDS,
+            self.settings.database_path,
+        )
 
     def fetch_transcript_dump(self, request: TranscriptDumpRequest) -> TranscriptDumpResponse:
+        logger.info(
+            "Starting transcript dump source(channel_id=%s, channel_url=%s, channel_handle=%s, search_query=%s) max_videos=%s languages=%s refresh=%s provider=%s",
+            request.channel_id,
+            request.channel_url,
+            request.channel_handle,
+            request.search_query,
+            request.max_videos,
+            request.languages,
+            request.refresh,
+            self.transcripts.provider,
+        )
         channel = self.youtube.resolve_channel(
             channel_id=request.channel_id,
             channel_url=request.channel_url,
             channel_handle=request.channel_handle,
             search_query=request.search_query,
         )
+        logger.info(
+            "Resolved channel channel_id=%s channel_name=%s",
+            channel["channel_id"],
+            channel["channel_name"],
+        )
         videos = self.youtube.get_recent_videos(channel["channel_id"], request.max_videos)
+        logger.info(
+            "Loaded recent videos channel_id=%s requested_max=%s actual_count=%s",
+            channel["channel_id"],
+            request.max_videos,
+            len(videos),
+        )
 
         self.store.upsert_channel(channel)
         self.store.upsert_videos(channel["channel_id"], videos)
@@ -44,6 +76,13 @@ class HarvestService:
                 )
             )
             if cached:
+                logger.info(
+                    "Transcript cache hit video_id=%s title=%s cached_status=%s has_text=%s",
+                    video["video_id"],
+                    video["title"],
+                    cached.get("transcript_status"),
+                    bool(cached.get("transcript_text")),
+                )
                 items.append(
                     TranscriptVideoItem(
                         **cached,
@@ -54,8 +93,23 @@ class HarvestService:
 
             attempted_at = datetime.utcnow().isoformat()
             try:
+                logger.info(
+                    "Transcript fetch miss video_id=%s title=%s provider=%s languages=%s",
+                    video["video_id"],
+                    video["title"],
+                    self.transcripts.provider,
+                    request.languages,
+                )
                 transcript = self.transcripts.fetch(video["video_id"], request.languages)
                 self.store.save_transcript(video["video_id"], transcript, attempted_at)
+                logger.info(
+                    "Transcript fetch success video_id=%s language=%s segment_count=%s word_count=%s generated=%s",
+                    video["video_id"],
+                    transcript.get("language"),
+                    transcript["segment_count"],
+                    len((transcript.get("text") or "").split()),
+                    transcript.get("is_generated"),
+                )
                 items.append(
                     TranscriptVideoItem(
                         video_id=video["video_id"],
@@ -74,6 +128,13 @@ class HarvestService:
             except Exception as exc:
                 error = self._clean_error(str(exc))
                 self.store.mark_transcript_failure(video["video_id"], error, attempted_at)
+                logger.warning(
+                    "Transcript fetch failed video_id=%s title=%s provider=%s error=%s",
+                    video["video_id"],
+                    video["title"],
+                    self.transcripts.provider,
+                    error,
+                )
                 items.append(
                     TranscriptVideoItem(
                         video_id=video["video_id"],
@@ -102,10 +163,28 @@ class HarvestService:
         if request.persist_dump_file:
             dump_path = self.persist_dump(response)
             response.dump_file = str(dump_path)
+            logger.info(
+                "Transcript dump persisted channel_id=%s path=%s",
+                response.channel_id,
+                response.dump_file,
+            )
+
+        logger.info(
+            "Transcript dump finished channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
+            response.channel_id,
+            response.channel_name,
+            response.transcripts_found,
+            len(response.videos),
+        )
 
         return response
 
     def get_cached_transcripts(self, channel_id: str, max_videos: int) -> TranscriptDumpResponse:
+        logger.info(
+            "Loading cached transcripts channel_id=%s max_videos=%s",
+            channel_id,
+            max_videos,
+        )
         channel_name = self.store.get_channel_name(channel_id)
         if not channel_name:
             raise ValueError(f"Channel '{channel_id}' is not cached yet")
@@ -115,7 +194,7 @@ class HarvestService:
             for item in self.store.get_cached_channel_transcripts(channel_id, max_videos)
         ]
 
-        return TranscriptDumpResponse(
+        response = TranscriptDumpResponse(
             channel_id=channel_id,
             channel_name=channel_name,
             requested_at=datetime.utcnow(),
@@ -124,6 +203,14 @@ class HarvestService:
             transcripts_found=sum(1 for item in items if item.transcript_status == "fetched"),
             videos=items,
         )
+        logger.info(
+            "Loaded cached transcripts channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
+            response.channel_id,
+            response.channel_name,
+            response.transcripts_found,
+            len(response.videos),
+        )
+        return response
 
     def persist_dump(self, response: TranscriptDumpResponse) -> Path:
         slug = self._slugify(response.channel_name)

@@ -29,34 +29,53 @@ class YouTubeCatalogService:
         search_query: str | None = None,
     ) -> dict[str, str]:
         self.ensure_client()
+        logger.info(
+            "Resolving channel source channel_id=%s channel_url=%s channel_handle=%s search_query=%s",
+            channel_id,
+            channel_url,
+            channel_handle,
+            search_query,
+        )
 
         if channel_id:
+            logger.info("Resolving channel directly via channel_id=%s", channel_id)
             return self.get_channel_metadata(channel_id)
 
         if channel_url:
             parsed_channel_id = self._extract_channel_id_from_url(channel_url)
             if parsed_channel_id:
+                logger.info(
+                    "Resolved channel URL to explicit channel_id=%s",
+                    parsed_channel_id,
+                )
                 channel = self.get_channel_metadata(parsed_channel_id)
                 channel["source_url"] = channel_url
                 return channel
 
             guessed_query = self._extract_query_from_url(channel_url)
             if guessed_query:
+                logger.info(
+                    "Resolved channel URL to search query=%s",
+                    guessed_query,
+                )
                 channel = self.search_channel(guessed_query)
                 channel["source_url"] = channel_url
                 return channel
 
         if channel_handle:
             normalized = channel_handle.lstrip("@")
+            logger.info("Resolving channel via handle=%s", normalized)
             return self.search_channel(normalized)
 
         if search_query:
+            logger.info("Resolving channel via search_query=%s", search_query)
             return self.search_channel(search_query)
 
         raise ValueError("A channel source is required")
 
     def search_channel(self, query: str) -> dict[str, str]:
         self.ensure_client()
+        logger.info("Searching YouTube channel for query=%s", query)
         try:
             response = (
                 self.client.search()
@@ -77,12 +96,14 @@ class YouTubeCatalogService:
 
         item = items[0]
         channel_id = item["snippet"]["channelId"]
+        logger.info("YouTube channel search matched channel_id=%s for query=%s", channel_id, query)
         metadata = self.get_channel_metadata(channel_id)
         metadata.setdefault("source_url", f"https://youtube.com/channel/{channel_id}")
         return metadata
 
     def get_channel_metadata(self, channel_id: str) -> dict[str, str]:
         self.ensure_client()
+        logger.info("Loading channel metadata channel_id=%s", channel_id)
         try:
             response = (
                 self.client.channels()
@@ -102,6 +123,13 @@ class YouTubeCatalogService:
         if not uploads:
             raise ValueError(f"Channel '{channel_id}' has no uploads playlist")
 
+        logger.info(
+            "Loaded channel metadata channel_id=%s channel_name=%s uploads_playlist_id=%s",
+            channel_id,
+            snippet.get("title") or channel_id,
+            uploads,
+        )
+
         return {
             "channel_id": channel_id,
             "channel_name": snippet.get("title") or channel_id,
@@ -113,6 +141,11 @@ class YouTubeCatalogService:
         }
 
     def get_recent_videos(self, channel_id: str, max_videos: int) -> list[dict[str, str]]:
+        logger.info(
+            "Loading recent videos channel_id=%s max_videos=%s",
+            channel_id,
+            max_videos,
+        )
         channel = self.get_channel_metadata(channel_id)
         uploads_playlist_id = channel["uploads_playlist_id"]
 
@@ -137,15 +170,27 @@ class YouTubeCatalogService:
             items = response.get("items", [])
             video_ids = [item["contentDetails"]["videoId"] for item in items]
             if video_ids:
+                logger.info(
+                    "Playlist page returned %s video ids for channel_id=%s",
+                    len(video_ids),
+                    channel_id,
+                )
                 videos.extend(self._get_video_details(video_ids))
 
             next_page_token = response.get("nextPageToken")
             if not next_page_token:
                 break
 
-        return videos[:max_videos]
+        final_videos = videos[:max_videos]
+        logger.info(
+            "Loaded recent videos channel_id=%s final_count=%s",
+            channel_id,
+            len(final_videos),
+        )
+        return final_videos
 
     def _get_video_details(self, video_ids: list[str]) -> list[dict[str, str]]:
+        logger.info("Loading video details for %s video ids", len(video_ids))
         try:
             response = (
                 self.client.videos()
@@ -174,6 +219,7 @@ class YouTubeCatalogService:
                     "created_at": timestamp,
                 }
             )
+        logger.info("Loaded video details count=%s", len(videos))
         return videos
 
     @staticmethod

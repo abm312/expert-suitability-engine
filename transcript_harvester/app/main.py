@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,6 +8,11 @@ from fastapi.responses import FileResponse
 from app.api.routes import router
 from app.core.config import get_settings
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 settings = get_settings()
 

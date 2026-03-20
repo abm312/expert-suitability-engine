@@ -28,8 +28,21 @@ class TranscriptFetcher:
             self.api = YouTubeTranscriptApi()
         except TypeError:
             self.api = None
+        logger.info(
+            "TranscriptFetcher initialized provider=%s supadata_configured=%s rapidapi_configured=%s supadata_mode=%s",
+            self.provider,
+            bool(self.settings.SUPADATA_API_KEY),
+            bool(self.settings.RAPIDAPI_KEY),
+            self.settings.SUPADATA_MODE,
+        )
 
     def fetch(self, video_id: str, languages: list[str]) -> dict[str, Any]:
+        logger.info(
+            "Transcript fetch start video_id=%s provider=%s languages=%s",
+            video_id,
+            self.provider,
+            languages,
+        )
         if self.provider == "supadata":
             normalized = self._fetch_via_supadata(video_id, languages)
         elif self.provider == "rapidapi":
@@ -45,6 +58,15 @@ class TranscriptFetcher:
         normalized["text"] = text
         normalized["segment_count"] = len(normalized["segments"])
         normalized["fetched_at"] = datetime.utcnow().isoformat()
+        logger.info(
+            "Transcript fetch complete video_id=%s provider=%s language=%s segment_count=%s word_count=%s generated=%s",
+            video_id,
+            self.provider,
+            normalized.get("language"),
+            normalized["segment_count"],
+            len(text.split()),
+            normalized.get("is_generated"),
+        )
         return normalized
 
     def _resolve_provider(self) -> str:
@@ -69,6 +91,12 @@ class TranscriptFetcher:
         }
         if requested_language:
             params["lang"] = requested_language
+        logger.info(
+            "Supadata transcript fetch start video_id=%s requested_language=%s mode=%s",
+            video_id,
+            requested_language,
+            params["mode"],
+        )
 
         response = self._supadata_get("/transcript", params)
         if response.status_code == 202:
@@ -76,11 +104,21 @@ class TranscriptFetcher:
             job_id = payload.get("jobId")
             if not job_id:
                 raise RuntimeError("Supadata returned 202 without a jobId")
+            logger.info(
+                "Supadata transcript fetch queued video_id=%s job_id=%s",
+                video_id,
+                job_id,
+            )
             payload = self._poll_supadata_job(job_id)
         else:
             payload = self._parse_json_response(response, "Supadata returned non-JSON transcript data")
 
         transcript = payload.get("content") or payload.get("transcript") or payload.get("result")
+        logger.info(
+            "Supadata transcript payload received video_id=%s payload_keys=%s",
+            video_id,
+            sorted(payload.keys()),
+        )
         return self._normalize_supadata_payload(transcript, requested_language)
 
     def _fetch_via_rapidapi(self, video_id: str, languages: list[str]) -> dict[str, Any]:
@@ -252,6 +290,13 @@ class TranscriptFetcher:
     def _supadata_get(self, path: str, params: dict[str, Any]) -> requests.Response:
         max_attempts = max(1, int(self.settings.SUPADATA_MAX_ATTEMPTS))
         for attempt in range(1, max_attempts + 1):
+            logger.info(
+                "Supadata request start path=%s attempt=%s/%s params=%s",
+                path,
+                attempt,
+                max_attempts,
+                params,
+            )
             try:
                 response = self.session.get(
                     f"{self.settings.SUPADATA_BASE_URL.rstrip('/')}{path}",
@@ -263,17 +308,38 @@ class TranscriptFetcher:
                 )
             except requests.Timeout as exc:
                 if self._can_retry_attempt(attempt, max_attempts):
+                    logger.warning(
+                        "Supadata request timeout path=%s attempt=%s/%s error=%s",
+                        path,
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
                     self._sleep_before_supadata_retry(attempt)
                     continue
                 raise RuntimeError(f"Supadata request timed out: {exc}") from exc
             except requests.RequestException as exc:
                 if self._can_retry_attempt(attempt, max_attempts):
+                    logger.warning(
+                        "Supadata request exception path=%s attempt=%s/%s error=%s",
+                        path,
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
                     self._sleep_before_supadata_retry(attempt)
                     continue
                 raise RuntimeError(f"Supadata request failed: {exc}") from exc
 
             if response.status_code in self.TRANSIENT_HTTP_STATUS_CODES:
                 if self._can_retry_attempt(attempt, max_attempts):
+                    logger.warning(
+                        "Supadata transient HTTP status path=%s attempt=%s/%s status=%s",
+                        path,
+                        attempt,
+                        max_attempts,
+                        response.status_code,
+                    )
                     self._sleep_before_supadata_retry(attempt)
                     continue
                 excerpt = response.text.strip()[:240]
@@ -287,6 +353,13 @@ class TranscriptFetcher:
                     f"Supadata request failed: HTTP {response.status_code} {excerpt}"
                 )
 
+            logger.info(
+                "Supadata request success path=%s attempt=%s/%s status=%s",
+                path,
+                attempt,
+                max_attempts,
+                response.status_code,
+            )
             return response
 
         raise RuntimeError(
@@ -305,6 +378,13 @@ class TranscriptFetcher:
             )
 
             status = self._coerce_text(payload.get("status", "")).strip().lower()
+            logger.info(
+                "Supadata job poll job_id=%s attempt=%s/%s status=%s",
+                job_id,
+                attempt,
+                max_attempts,
+                status,
+            )
             if status in {"completed", "succeeded", "success", "done"}:
                 return payload
             if status in {"failed", "error"}:
@@ -367,6 +447,14 @@ class TranscriptFetcher:
                     "duration": float(self._read_attr(item, "duration", 0.0)),
                 }
             )
+
+        logger.info(
+            "Supadata transcript normalized requested_language=%s resolved_language=%s segment_count=%s generated=%s",
+            requested_language,
+            transcript_language,
+            len(segments),
+            is_generated,
+        )
 
         return {
             "language": transcript_language,
