@@ -125,6 +125,47 @@ export const api = {
   getProgress: () =>
     fetchAPI<{ status: string; step: string; details: string }>('/progress'),
 
+  downloadCuratedCreatorExport: async (params?: {
+    finalLimit?: number;
+    perQueryLimit?: number;
+    minTopicAuthority?: number;
+  }) => {
+    const query = new URLSearchParams({
+      format: 'csv',
+      final_limit: String(params?.finalLimit ?? 40),
+      per_query_limit: String(params?.perQueryLimit ?? 10),
+      min_topic_authority: String(params?.minTopicAuthority ?? 0.7),
+    });
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/search/export/curated?${query.toString()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new APIError(0, 'Cannot connect to server. Make sure the backend is running on port 8000.');
+      }
+      throw err;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Creator export request failed' }));
+      throw new APIError(response.status, error.detail || 'Creator export request failed');
+    }
+
+    const blob = await response.blob();
+    const filename = parseDownloadFilename(
+      response.headers.get('Content-Disposition'),
+      'ai-youtube-creators-export.csv'
+    );
+
+    return { blob, filename };
+  },
+
   // Resolve transcript service base URL (local-only unless explicitly configured)
   getTranscriptApiBase,
 

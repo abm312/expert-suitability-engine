@@ -15,7 +15,8 @@ import {
   MetricType, 
   MetricConfig, 
   FilterConfig,
-  DEFAULT_METRICS 
+  DEFAULT_METRICS,
+  DEFAULT_FILTERS,
 } from '@/types';
 import { api } from '@/lib/api';
 import { Search, Github, Zap, Youtube, Database, Brain, CheckCircle, TrendingUp } from 'lucide-react';
@@ -31,6 +32,7 @@ const PROGRESS_STEPS = {
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResponse | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -39,7 +41,7 @@ export default function Home() {
   
   // Search configuration
   const [metrics, setMetrics] = useState<Record<MetricType, MetricConfig>>(DEFAULT_METRICS);
-  const [filters, setFilters] = useState<FilterConfig>({});
+  const [filters, setFilters] = useState<FilterConfig>(DEFAULT_FILTERS);
 
   // Poll for progress while loading
   useEffect(() => {
@@ -99,6 +101,34 @@ export default function Home() {
     setError(null);
     setIsLoading(false);
     setProgress({ step: '', details: '' });
+    setFilters(DEFAULT_FILTERS);
+  }, []);
+
+  const handleExportCsv = useCallback(async () => {
+    setIsExportingCsv(true);
+    setError(null);
+
+    try {
+      const { blob, filename } = await api.downloadCuratedCreatorExport({
+        finalLimit: 40,
+        perQueryLimit: 10,
+        minTopicAuthority: 0.7,
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('CSV export error:', err);
+      setError(err instanceof Error ? err.message : 'Creator export failed');
+    } finally {
+      setIsExportingCsv(false);
+    }
   }, []);
 
   return (
@@ -309,6 +339,8 @@ export default function Home() {
                       filteredCount={results.filtered_count}
                       processingTime={results.processing_time_ms}
                       metricsUsed={results.metrics_used}
+                      onExportCsv={handleExportCsv}
+                      isExportingCsv={isExportingCsv}
                     />
                     <div className="space-y-4">
                       {results.creators.map((creator, index) => (

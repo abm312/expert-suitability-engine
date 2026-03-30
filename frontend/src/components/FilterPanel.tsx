@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Filter, X } from 'lucide-react';
-import { FilterConfig } from '@/types';
+import { FilterConfig, DEFAULT_FILTERS } from '@/types';
 import { cn, formatNumber } from '@/lib/utils';
 
 interface FilterPanelProps {
@@ -28,7 +28,7 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
   };
 
   const clearFilters = () => {
-    onChange({});
+    onChange(DEFAULT_FILTERS);
   };
 
   const applyPreset = (min: number | undefined, max: number | undefined) => {
@@ -169,4 +169,3 @@ export function FilterPanel({ filters, onChange }: FilterPanelProps) {
     </div>
   );
 }
-

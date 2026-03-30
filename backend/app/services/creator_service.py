@@ -486,6 +486,44 @@ class CreatorService:
             return "Slowing"
         else:
             return "Declining"
+
+    def build_creator_export_rows(self, search_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Transform scored search results into a stable structured export format."""
+        rows: List[Dict[str, Any]] = []
+
+        for creator in search_results.get("creators", []):
+            subscores = creator.get("subscores", {})
+            suggested_topics = creator.get("suggested_topics", []) or []
+            why_expert = creator.get("why_expert", []) or []
+            top_videos = creator.get("top_videos", []) or []
+
+            rows.append({
+                "name": creator.get("channel_name"),
+                "channel_url": creator.get("channel_url"),
+                "channel_id": creator.get("channel_id"),
+                "subscriber_count": creator.get("total_subscribers"),
+                "total_views": creator.get("total_views"),
+                "overall_score": creator.get("overall_score"),
+                "niche_category": suggested_topics[0] if suggested_topics else None,
+                "topic_focus": ", ".join(suggested_topics[:3]) if suggested_topics else None,
+                "growth_trend": creator.get("growth_trend"),
+                "growth_score": subscores.get("growth"),
+                "credibility_score": subscores.get("credibility"),
+                "topic_authority_score": subscores.get("topic_authority"),
+                "freshness_score": subscores.get("freshness"),
+                "topic_match_summary": creator.get("topic_match_summary"),
+                "description": " ".join(why_expert[:2]) if why_expert else None,
+                "top_videos": [
+                    {
+                        "title": video.get("title"),
+                        "video_id": video.get("video_id"),
+                        "views": video.get("views"),
+                    }
+                    for video in top_videos
+                ],
+            })
+
+        return rows
     
     async def get_creator_detail(
         self,

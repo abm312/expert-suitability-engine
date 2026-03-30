@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import json
 import asyncio
 import logging
 import traceback
+import csv
+import re
+from io import StringIO
 
 from app.db.database import get_db
-from app.schemas.search import SearchRequest, DiscoverRequest
+from app.schemas.search import SearchRequest, DiscoverRequest, FilterConfig, MetricConfig, MetricType
 from app.schemas.creator import CreatorResponse, CreatorDetail
 from app.services.creator_service import CreatorService
 
@@ -21,6 +24,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 creator_service = CreatorService()
+
+CURATED_EXPORT_QUERIES = [
+    "AI/ML Engineer",
+    "LLM Expert",
+    "Data Scientist",
+    "MLOps Specialist",
+    "Computer Vision",
+]
+
+CURATED_EXPORT_METRICS = {
+    MetricType.CREDIBILITY: MetricConfig(enabled=True, weight=0.25),
+    MetricType.TOPIC_AUTHORITY: MetricConfig(enabled=True, weight=0.35),
+    MetricType.COMMUNICATION: MetricConfig(enabled=False, weight=0.0),
+    MetricType.FRESHNESS: MetricConfig(enabled=True, weight=0.20),
+    MetricType.GROWTH: MetricConfig(enabled=True, weight=0.20),
+}
+
+CURATED_EXPORT_FILTERS = FilterConfig(
+    subscriber_min=10000,
+    uploads_last_90_days_min=2,
+)
 
 # Global progress tracker
 search_progress = {"status": "idle", "step": "", "details": ""}
@@ -42,6 +66,66 @@ def update_progress(status: str, step: str, details: str = ""):
     """Update the global progress tracker"""
     global search_progress
     search_progress = {"status": status, "step": step, "details": details}
+
+
+def _creator_export_fieldnames() -> List[str]:
+    return [
+        "name",
+        "channel_url",
+        "channel_id",
+        "subscriber_count",
+        "total_views",
+        "overall_score",
+        "niche_category",
+        "topic_focus",
+        "growth_trend",
+        "growth_score",
+        "credibility_score",
+        "topic_authority_score",
+        "freshness_score",
+        "topic_match_summary",
+        "description",
+        "matched_queries",
+        "top_video_titles",
+    ]
+
+
+def _write_creator_export_csv(rows: List[Dict[str, Any]]) -> str:
+    csv_buffer = StringIO()
+    writer = csv.DictWriter(csv_buffer, fieldnames=_creator_export_fieldnames())
+    writer.writeheader()
+
+    for row in rows:
+        writer.writerow({
+            "name": row.get("name"),
+            "channel_url": row.get("channel_url"),
+            "channel_id": row.get("channel_id"),
+            "subscriber_count": row.get("subscriber_count"),
+            "total_views": row.get("total_views"),
+            "overall_score": row.get("overall_score"),
+            "niche_category": row.get("niche_category"),
+            "topic_focus": row.get("topic_focus"),
+            "growth_trend": row.get("growth_trend"),
+            "growth_score": row.get("growth_score"),
+            "credibility_score": row.get("credibility_score"),
+            "topic_authority_score": row.get("topic_authority_score"),
+            "freshness_score": row.get("freshness_score"),
+            "topic_match_summary": row.get("topic_match_summary"),
+            "description": row.get("description"),
+            "matched_queries": ", ".join(row.get("matched_queries", [])),
+            "top_video_titles": " | ".join(
+                video.get("title", "")
+                for video in row.get("top_videos", [])
+                if video.get("title")
+            ),
+        })
+
+    return csv_buffer.getvalue()
+
+
+def _export_filename(prefix: str, value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-") or prefix
+    return f"{slug}.csv"
 
 
 @router.post("/discover")
@@ -120,6 +204,142 @@ async def search_creators(
         logger.error(f"Full traceback:\n{traceback.format_exc()}")
         logger.error("=" * 80)
         update_progress("error", "failed", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/search/export")
+async def export_search_creators(
+    request: SearchRequest,
+    format: str = Query(default="json", pattern="^(json|csv)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Export scored search results as structured JSON or CSV.
+
+    This reuses the same search pipeline and metrics as the main search flow,
+    but returns an editorial/content-friendly export format.
+    """
+    logger.info(
+        "📦 EXPORT REQUEST: topic='%s' limit=%s offset=%s format=%s",
+        request.topic_query,
+        request.limit,
+        request.offset,
+        format,
+    )
+
+    try:
+        results = await creator_service.search_creators(db, request)
+        export_rows = creator_service.build_creator_export_rows(results)
+
+        if format == "json":
+            return {
+                "query": request.topic_query,
+                "exported_count": len(export_rows),
+                "processing_time_ms": results.get("processing_time_ms"),
+                "metrics_used": results.get("metrics_used", []),
+                "creators": export_rows,
+            }
+
+        filename = _export_filename("creator-search", f"{request.topic_query}-creator-export")
+        return StreamingResponse(
+            iter([_write_creator_export_csv(export_rows)]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    except Exception as e:
+        logger.error("❌ EXPORT ERROR: %s", str(e))
+        logger.error("Full traceback:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/search/export/curated")
+async def export_curated_ai_creators(
+    format: str = Query(default="json", pattern="^(json|csv)$"),
+    final_limit: int = Query(default=40, ge=1, le=100),
+    per_query_limit: int = Query(default=10, ge=1, le=50),
+    min_topic_authority: float = Query(default=0.7, ge=0.0, le=1.0),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate a cleaner editorial export by merging multiple AI-focused queries,
+    applying stronger default filters, and deduplicating channels.
+    """
+    logger.info(
+        "📦 CURATED EXPORT REQUEST: format=%s final_limit=%s per_query_limit=%s min_topic_authority=%s",
+        format,
+        final_limit,
+        per_query_limit,
+        min_topic_authority,
+    )
+
+    try:
+        merged_by_channel: Dict[str, Dict[str, Any]] = {}
+
+        for topic_query in CURATED_EXPORT_QUERIES:
+            request = SearchRequest(
+                topic_query=topic_query,
+                topic_keywords=[],
+                metrics=CURATED_EXPORT_METRICS,
+                filters=CURATED_EXPORT_FILTERS,
+                limit=per_query_limit,
+                offset=0,
+            )
+            logger.info("   ↳ Curated export running query='%s'", topic_query)
+            results = await creator_service.search_creators(db, request)
+            export_rows = creator_service.build_creator_export_rows(results)
+
+            for row in export_rows:
+                topic_authority = row.get("topic_authority_score") or 0.0
+                if topic_authority < min_topic_authority:
+                    continue
+
+                channel_id = row.get("channel_id")
+                if not channel_id:
+                    continue
+
+                existing = merged_by_channel.get(channel_id)
+                matched_queries = set((existing or {}).get("matched_queries", []))
+                matched_queries.add(topic_query)
+                row["matched_queries"] = sorted(matched_queries)
+
+                if existing is None or (row.get("overall_score") or 0.0) > (existing.get("overall_score") or 0.0):
+                    merged_by_channel[channel_id] = row
+                else:
+                    existing["matched_queries"] = sorted(matched_queries)
+
+        curated_rows = sorted(
+            merged_by_channel.values(),
+            key=lambda row: (
+                row.get("overall_score") or 0.0,
+                row.get("topic_authority_score") or 0.0,
+                row.get("subscriber_count") or 0,
+            ),
+            reverse=True,
+        )[:final_limit]
+
+        if format == "json":
+            return {
+                "queries": CURATED_EXPORT_QUERIES,
+                "exported_count": len(curated_rows),
+                "default_filters": {
+                    "subscriber_min": CURATED_EXPORT_FILTERS.subscriber_min,
+                    "uploads_last_90_days_min": CURATED_EXPORT_FILTERS.uploads_last_90_days_min,
+                },
+                "min_topic_authority": min_topic_authority,
+                "creators": curated_rows,
+            }
+
+        filename = _export_filename("ai-youtube-creators-export", f"ai-youtube-creators-export-{final_limit}")
+        return StreamingResponse(
+            iter([_write_creator_export_csv(curated_rows)]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    except Exception as e:
+        logger.error("❌ CURATED EXPORT ERROR: %s", str(e))
+        logger.error("Full traceback:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -286,4 +506,3 @@ async def get_available_filters():
             },
         ]
     }
-
