@@ -71,9 +71,7 @@ export interface SearchResponse {
   processing_time_ms: number;
 }
 
-export const DEFAULT_FILTERS: FilterConfig = {
-  subscriber_min: 10000,
-};
+export const DEFAULT_FILTERS: FilterConfig = {};
 
 export interface TranscriptSegment {
   text: string;

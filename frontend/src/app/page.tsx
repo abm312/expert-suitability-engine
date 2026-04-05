@@ -32,9 +32,11 @@ const PROGRESS_STEPS = {
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
-  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [isExportingCurrentCsv, setIsExportingCurrentCsv] = useState(false);
+  const [isExportingCuratedCsv, setIsExportingCuratedCsv] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResponse | null>(null);
+  const [lastSearchRequest, setLastSearchRequest] = useState<SearchRequest | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [progress, setProgress] = useState<{ step: string; details: string }>({ step: '', details: '' });
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
@@ -83,6 +85,7 @@ export default function Home() {
     };
 
     try {
+      setLastSearchRequest(request);
       const response = await api.searchCreators(request);
       setResults(response);
     } catch (err) {
@@ -98,14 +101,46 @@ export default function Home() {
   const handleReset = useCallback(() => {
     setHasSearched(false);
     setResults(null);
+    setLastSearchRequest(null);
     setError(null);
     setIsLoading(false);
     setProgress({ step: '', details: '' });
     setFilters(DEFAULT_FILTERS);
   }, []);
 
-  const handleExportCsv = useCallback(async () => {
-    setIsExportingCsv(true);
+  const downloadBlob = useCallback((blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+  }, []);
+
+  const handleExportCurrentCsv = useCallback(async () => {
+    if (!lastSearchRequest) {
+      setError('No completed search is available to export yet.');
+      return;
+    }
+
+    setIsExportingCurrentCsv(true);
+    setError(null);
+
+    try {
+      const { blob, filename } = await api.downloadSearchExport(lastSearchRequest);
+      downloadBlob(blob, filename);
+    } catch (err) {
+      console.error('Current search CSV export error:', err);
+      setError(err instanceof Error ? err.message : 'Current search export failed');
+    } finally {
+      setIsExportingCurrentCsv(false);
+    }
+  }, [downloadBlob, lastSearchRequest]);
+
+  const handleExportCuratedCsv = useCallback(async () => {
+    setIsExportingCuratedCsv(true);
     setError(null);
 
     try {
@@ -114,22 +149,14 @@ export default function Home() {
         perQueryLimit: 10,
         minTopicAuthority: 0.7,
       });
-
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
+      downloadBlob(blob, filename);
     } catch (err) {
-      console.error('CSV export error:', err);
-      setError(err instanceof Error ? err.message : 'Creator export failed');
+      console.error('Curated CSV export error:', err);
+      setError(err instanceof Error ? err.message : 'Curated creator export failed');
     } finally {
-      setIsExportingCsv(false);
+      setIsExportingCuratedCsv(false);
     }
-  }, []);
+  }, [downloadBlob]);
 
   return (
     <div className="min-h-screen">
@@ -339,8 +366,10 @@ export default function Home() {
                       filteredCount={results.filtered_count}
                       processingTime={results.processing_time_ms}
                       metricsUsed={results.metrics_used}
-                      onExportCsv={handleExportCsv}
-                      isExportingCsv={isExportingCsv}
+                      onExportCurrentCsv={handleExportCurrentCsv}
+                      onExportCuratedCsv={handleExportCuratedCsv}
+                      isExportingCurrentCsv={isExportingCurrentCsv}
+                      isExportingCuratedCsv={isExportingCuratedCsv}
                     />
                     <div className="space-y-4">
                       {results.creators.map((creator, index) => (

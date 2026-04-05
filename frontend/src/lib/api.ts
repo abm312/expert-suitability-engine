@@ -83,6 +83,37 @@ export const api = {
       body: JSON.stringify(request),
     }),
 
+  downloadSearchExport: async (request: SearchRequest) => {
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/search/export?format=csv`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new APIError(0, 'Cannot connect to server. Make sure the backend is running on port 8000.');
+      }
+      throw err;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Current search export failed' }));
+      throw new APIError(response.status, error.detail || 'Current search export failed');
+    }
+
+    const blob = await response.blob();
+    const filename = parseDownloadFilename(
+      response.headers.get('Content-Disposition'),
+      'current-search-export.csv'
+    );
+
+    return { blob, filename };
+  },
+
   // List creators
   listCreators: (params?: { limit?: number; offset?: number; sort_by?: string }) => {
     const query = new URLSearchParams();
