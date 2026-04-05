@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select
 from typing import Optional, List, Dict, Any
 import json
 import asyncio
@@ -8,11 +9,20 @@ import logging
 import traceback
 import csv
 import re
+from datetime import datetime
 from io import StringIO
 
 from app.db.database import get_db
+from app.db.models import RisingVoice
+from app.core.config import get_settings
+from app.core.rising_voices import (
+    RISING_VOICES_FILTERS,
+    RISING_VOICES_METRICS,
+    RISING_VOICES_QUERIES,
+)
 from app.schemas.search import SearchRequest, DiscoverRequest, FilterConfig, MetricConfig, MetricType
 from app.schemas.creator import CreatorResponse, CreatorDetail
+from app.schemas.rising_voices import RisingVoiceResponse, RisingVoicesRefreshResponse, RisingVoiceScoreBreakdown
 from app.services.creator_service import CreatorService
 
 # Configure logging
@@ -24,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 creator_service = CreatorService()
+settings = get_settings()
 
 CURATED_EXPORT_QUERIES = [
     "AI/ML Engineer",
@@ -66,6 +77,14 @@ def update_progress(status: str, step: str, details: str = ""):
     """Update the global progress tracker"""
     global search_progress
     search_progress = {"status": status, "step": step, "details": details}
+
+
+def require_rising_voices_api_key(
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")
+):
+    expected = settings.RISING_VOICES_API_KEY
+    if expected and x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
 
 def _creator_export_fieldnames() -> List[str]:
@@ -274,49 +293,15 @@ async def export_curated_ai_creators(
     )
 
     try:
-        merged_by_channel: Dict[str, Dict[str, Any]] = {}
-
-        for topic_query in CURATED_EXPORT_QUERIES:
-            request = SearchRequest(
-                topic_query=topic_query,
-                topic_keywords=[],
-                metrics=CURATED_EXPORT_METRICS,
-                filters=CURATED_EXPORT_FILTERS,
-                limit=per_query_limit,
-                offset=0,
-            )
-            logger.info("   ↳ Curated export running query='%s'", topic_query)
-            results = await creator_service.search_creators(db, request)
-            export_rows = creator_service.build_creator_export_rows(results)
-
-            for row in export_rows:
-                topic_authority = row.get("topic_authority_score") or 0.0
-                if topic_authority < min_topic_authority:
-                    continue
-
-                channel_id = row.get("channel_id")
-                if not channel_id:
-                    continue
-
-                existing = merged_by_channel.get(channel_id)
-                matched_queries = set((existing or {}).get("matched_queries", []))
-                matched_queries.add(topic_query)
-                row["matched_queries"] = sorted(matched_queries)
-
-                if existing is None or (row.get("overall_score") or 0.0) > (existing.get("overall_score") or 0.0):
-                    merged_by_channel[channel_id] = row
-                else:
-                    existing["matched_queries"] = sorted(matched_queries)
-
-        curated_rows = sorted(
-            merged_by_channel.values(),
-            key=lambda row: (
-                row.get("overall_score") or 0.0,
-                row.get("topic_authority_score") or 0.0,
-                row.get("subscriber_count") or 0,
-            ),
-            reverse=True,
-        )[:final_limit]
+        curated_rows = await creator_service.build_curated_export_rows(
+            db=db,
+            queries=CURATED_EXPORT_QUERIES,
+            metrics=CURATED_EXPORT_METRICS,
+            filters=CURATED_EXPORT_FILTERS,
+            final_limit=final_limit,
+            per_query_limit=per_query_limit,
+            min_topic_authority=min_topic_authority,
+        )
 
         if format == "json":
             return {
@@ -341,6 +326,96 @@ async def export_curated_ai_creators(
         logger.error("❌ CURATED EXPORT ERROR: %s", str(e))
         logger.error("Full traceback:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/rising-voices/refresh",
+    response_model=RisingVoicesRefreshResponse,
+    dependencies=[Depends(require_rising_voices_api_key)],
+)
+async def refresh_rising_voices(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Recompute the Rising AI Voices feed and store it in Postgres for fast serving.
+    """
+    logger.info(
+        "📡 RISING VOICES REFRESH: final_limit=%s per_query_limit=%s min_topic_authority=%s",
+        settings.RISING_VOICES_FINAL_LIMIT,
+        settings.RISING_VOICES_PER_QUERY_LIMIT,
+        settings.RISING_VOICES_MIN_TOPIC_AUTHORITY,
+    )
+
+    try:
+        refresh_result = await creator_service.refresh_rising_voices_snapshot(
+            db=db,
+            queries=RISING_VOICES_QUERIES,
+            metrics=RISING_VOICES_METRICS,
+            filters=RISING_VOICES_FILTERS,
+            final_limit=settings.RISING_VOICES_FINAL_LIMIT,
+            per_query_limit=settings.RISING_VOICES_PER_QUERY_LIMIT,
+            min_topic_authority=settings.RISING_VOICES_MIN_TOPIC_AUTHORITY,
+        )
+
+        return RisingVoicesRefreshResponse(
+            status="success",
+            refreshedAt=refresh_result["refreshed_at"],
+            count=refresh_result["count"],
+            endpoint="/api/v1/rising-voices",
+            apiKeyRequired=bool(settings.RISING_VOICES_API_KEY),
+        )
+
+    except Exception as e:
+        await db.rollback()
+        logger.error("❌ RISING VOICES REFRESH ERROR: %s", str(e))
+        logger.error("Full traceback:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/rising-voices",
+    response_model=List[RisingVoiceResponse],
+    dependencies=[Depends(require_rising_voices_api_key)],
+)
+async def get_rising_voices(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fast read endpoint for the precomputed Rising AI Voices feed.
+    """
+    result = await db.execute(
+        select(RisingVoice)
+        .order_by(RisingVoice.rank.asc(), RisingVoice.overall_score.desc())
+    )
+    rows = result.scalars().all()
+
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No rising voices snapshot available yet. Run POST /api/v1/rising-voices/refresh first."
+        )
+
+    return [
+        RisingVoiceResponse(
+            name=row.name,
+            slug=row.slug,
+            host=row.host,
+            subscriberCount=row.subscriber_count,
+            growthSignal=row.growth_signal,
+            scoreBreakdown=RisingVoiceScoreBreakdown(
+                credibility=round(row.credibility_score or 0.0, 3),
+                topicAuthority=round(row.topic_authority_score or 0.0, 3),
+                communication=round(row.communication_score or 0.0, 3),
+                freshness=round(row.freshness_score or 0.0, 3),
+                growth=round(row.growth_score or 0.0, 3),
+            ),
+            overallScore=round(row.overall_score or 0.0, 3),
+            tags=row.tags or [],
+            channelUrl=row.channel_url,
+            lastScored=row.last_scored,
+        )
+        for row in rows
+    ]
 
 
 @router.get("/creators")

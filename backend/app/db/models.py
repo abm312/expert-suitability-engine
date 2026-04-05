@@ -104,3 +104,26 @@ class SearchQuery(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     results_count = Column(Integer, default=0)
 
+
+class RisingVoice(Base):
+    __tablename__ = "rising_voices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rank = Column(Integer, nullable=False, index=True)
+    channel_id = Column(String(50), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False, index=True)
+    host = Column(String(255), nullable=False)
+    subscriber_count = Column(BigInteger, default=0)
+    growth_signal = Column(String(255), nullable=False)
+    credibility_score = Column(Float, nullable=False, default=0.0)
+    topic_authority_score = Column(Float, nullable=False, default=0.0)
+    communication_score = Column(Float, nullable=False, default=0.0)
+    freshness_score = Column(Float, nullable=False, default=0.0)
+    growth_score = Column(Float, nullable=False, default=0.0)
+    overall_score = Column(Float, nullable=False, default=0.0)
+    tags = Column(JSON, default=list)
+    channel_url = Column(String(500), nullable=False)
+    last_scored = Column(Date, nullable=False)
+    matched_queries = Column(JSON, default=list)
+    refreshed_at = Column(DateTime, default=datetime.utcnow, nullable=False)

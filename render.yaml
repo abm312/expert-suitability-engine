@@ -32,6 +32,32 @@ services:
         value: false
     healthCheckPath: /api/v1/health
 
+  # Daily precompute for the Rising AI Voices feed
+  - type: cron
+    name: ese-rising-voices-refresh
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: alembic upgrade head && python scripts/refresh_rising_voices_job.py
+    region: oregon
+    plan: starter
+    schedule: "0 7 * * *"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ese-db
+          property: connectionString
+      - key: DATABASE_SYNC_URL
+        fromDatabase:
+          name: ese-db
+          property: connectionString
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DEBUG
+        value: false
+
   # Frontend
   - type: web
     name: ese-frontend

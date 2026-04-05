@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     DEFAULT_COMMUNICATION_WEIGHT: float = 0.2
     DEFAULT_FRESHNESS_WEIGHT: float = 0.15
     DEFAULT_GROWTH_WEIGHT: float = 0.15
+
+    # Rising AI Voices feed
+    RISING_VOICES_API_KEY: Optional[str] = None
+    RISING_VOICES_FINAL_LIMIT: int = 15
+    RISING_VOICES_PER_QUERY_LIMIT: int = 10
+    RISING_VOICES_MIN_TOPIC_AUTHORITY: float = 0.7
     
     class Config:
         env_file = ".env"
@@ -36,4 +42,3 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
-

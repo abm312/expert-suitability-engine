@@ -1,22 +1,31 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 import re
 import logging
 import traceback
 
-from app.db.models import Creator, Video, Transcript, MetricsSnapshot
+from app.db.models import Creator, Video, Transcript, MetricsSnapshot, RisingVoice
 from app.services.youtube_service import YouTubeService
 from app.services.embedding_service import EmbeddingService
 from app.services.scoring_engine import ScoringEngine
 from app.services.filter_service import FilterService
 from app.services.explainability_service import ExplainabilityService
-from app.schemas.search import SearchRequest, MetricType
+from app.schemas.search import SearchRequest, MetricType, FilterConfig, MetricConfig
 from app.schemas.creator import CreatorCard, VideoSummary
 
 logger = logging.getLogger(__name__)
+
+
+QUERY_TAG_MAP = {
+    "AI/ML Engineer": "engineering",
+    "LLM Expert": "llm",
+    "Data Scientist": "data-science",
+    "MLOps Specialist": "mlops",
+    "Computer Vision": "computer-vision",
+}
 
 
 def parse_datetime_safe(date_str: str) -> Optional[datetime]:
@@ -510,6 +519,7 @@ class CreatorService:
                 "growth_score": subscores.get("growth"),
                 "credibility_score": subscores.get("credibility"),
                 "topic_authority_score": subscores.get("topic_authority"),
+                "communication_score": subscores.get("communication"),
                 "freshness_score": subscores.get("freshness"),
                 "topic_match_summary": creator.get("topic_match_summary"),
                 "description": " ".join(why_expert[:2]) if why_expert else None,
@@ -524,6 +534,228 @@ class CreatorService:
             })
 
         return rows
+
+    async def build_curated_export_rows(
+        self,
+        db: AsyncSession,
+        queries: List[str],
+        metrics: Dict[MetricType, MetricConfig],
+        filters: FilterConfig,
+        final_limit: int,
+        per_query_limit: int,
+        min_topic_authority: float,
+    ) -> List[Dict[str, Any]]:
+        """Generate a merged, deduplicated export list across multiple preset queries."""
+        merged_by_channel: Dict[str, Dict[str, Any]] = {}
+
+        for topic_query in queries:
+            request = SearchRequest(
+                topic_query=topic_query,
+                topic_keywords=[],
+                metrics=metrics,
+                filters=filters,
+                limit=per_query_limit,
+                offset=0,
+            )
+            logger.info("   ↳ Curated export running query='%s'", topic_query)
+            results = await self.search_creators(db, request)
+            export_rows = self.build_creator_export_rows(results)
+
+            for row in export_rows:
+                topic_authority = row.get("topic_authority_score") or 0.0
+                if topic_authority < min_topic_authority:
+                    continue
+
+                channel_id = row.get("channel_id")
+                if not channel_id:
+                    continue
+
+                existing = merged_by_channel.get(channel_id)
+                matched_queries = set((existing or {}).get("matched_queries", []))
+                matched_queries.add(topic_query)
+                row["matched_queries"] = sorted(matched_queries)
+
+                if existing is None or (row.get("overall_score") or 0.0) > (existing.get("overall_score") or 0.0):
+                    merged_by_channel[channel_id] = row
+                else:
+                    existing["matched_queries"] = sorted(matched_queries)
+
+        return sorted(
+            merged_by_channel.values(),
+            key=lambda row: (
+                row.get("overall_score") or 0.0,
+                row.get("topic_authority_score") or 0.0,
+                row.get("subscriber_count") or 0,
+            ),
+            reverse=True,
+        )[:final_limit]
+
+    def _slugify(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+
+    def _infer_host_name(self, channel_name: str) -> str:
+        if not channel_name:
+            return "Unknown"
+
+        match = re.search(r"\bwith\s+(.+)$", channel_name, re.IGNORECASE)
+        if match:
+            return match.group(1).strip(" -|:")
+
+        return channel_name.strip()
+
+    def _build_tag_list(self, matched_queries: List[str], channel_name: Optional[str]) -> List[str]:
+        tags: List[str] = []
+
+        for query in matched_queries:
+            mapped = QUERY_TAG_MAP.get(query)
+            if mapped and mapped not in tags:
+                tags.append(mapped)
+
+        if channel_name and "podcast" in channel_name.lower() and "podcast" not in tags:
+            tags.append("podcast")
+
+        return tags[:3]
+
+    def _build_growth_signal(
+        self,
+        creator: Optional[Creator],
+        export_row: Dict[str, Any],
+    ) -> str:
+        if creator and len(creator.metrics_snapshots) >= 2:
+            snapshots = sorted(creator.metrics_snapshots, key=lambda snapshot: snapshot.date)
+            earliest = snapshots[0]
+            latest = snapshots[-1]
+            days = max((latest.date - earliest.date).days, 1)
+
+            if earliest.subscriber_count and earliest.subscriber_count > 0:
+                growth_pct = ((latest.subscriber_count - earliest.subscriber_count) / earliest.subscriber_count) * 100
+                if growth_pct >= 0:
+                    return f"{growth_pct:.0f}% subscriber growth in {days} days"
+                return f"{growth_pct:.0f}% subscriber change in {days} days"
+
+        growth_trend = export_row.get("growth_trend") or "Growth signal unavailable"
+        growth_score = float(export_row.get("growth_score") or 0.0)
+        return f"{growth_trend} momentum (growth score {growth_score:.2f})"
+
+    async def build_rising_voices_rows(
+        self,
+        db: AsyncSession,
+        queries: List[str],
+        metrics: Dict[MetricType, MetricConfig],
+        filters: FilterConfig,
+        final_limit: int,
+        per_query_limit: int,
+        min_topic_authority: float,
+    ) -> List[Dict[str, Any]]:
+        curated_rows = await self.build_curated_export_rows(
+            db=db,
+            queries=queries,
+            metrics=metrics,
+            filters=filters,
+            final_limit=final_limit,
+            per_query_limit=per_query_limit,
+            min_topic_authority=min_topic_authority,
+        )
+
+        if not curated_rows:
+            return []
+
+        channel_ids = [row["channel_id"] for row in curated_rows if row.get("channel_id")]
+        result = await db.execute(
+            select(Creator)
+            .options(selectinload(Creator.metrics_snapshots))
+            .where(Creator.channel_id.in_(channel_ids))
+        )
+        creators_by_channel = {
+            creator.channel_id: creator
+            for creator in result.scalars().all()
+        }
+
+        today = date.today()
+        rising_rows: List[Dict[str, Any]] = []
+
+        for rank, row in enumerate(curated_rows, start=1):
+            channel_id = row.get("channel_id")
+            creator = creators_by_channel.get(channel_id)
+            matched_queries = row.get("matched_queries", []) or []
+            name = row.get("name") or channel_id or "Unknown"
+
+            rising_rows.append({
+                "rank": rank,
+                "channel_id": channel_id,
+                "name": name,
+                "slug": self._slugify(name),
+                "host": self._infer_host_name(name),
+                "subscriber_count": int(row.get("subscriber_count") or 0),
+                "growth_signal": self._build_growth_signal(creator, row),
+                "credibility_score": round(float(row.get("credibility_score") or 0.0), 3),
+                "topic_authority_score": round(float(row.get("topic_authority_score") or 0.0), 3),
+                "communication_score": round(float(row.get("communication_score") or 0.0), 3),
+                "freshness_score": round(float(row.get("freshness_score") or 0.0), 3),
+                "growth_score": round(float(row.get("growth_score") or 0.0), 3),
+                "overall_score": round(float(row.get("overall_score") or 0.0), 3),
+                "tags": self._build_tag_list(matched_queries, name),
+                "channel_url": row.get("channel_url") or f"https://youtube.com/channel/{channel_id}",
+                "last_scored": today,
+                "matched_queries": matched_queries,
+            })
+
+        return rising_rows
+
+    async def refresh_rising_voices_snapshot(
+        self,
+        db: AsyncSession,
+        queries: List[str],
+        metrics: Dict[MetricType, MetricConfig],
+        filters: FilterConfig,
+        final_limit: int,
+        per_query_limit: int,
+        min_topic_authority: float,
+    ) -> Dict[str, Any]:
+        """Recompute and store the Rising AI Voices snapshot."""
+        rising_rows = await self.build_rising_voices_rows(
+            db=db,
+            queries=queries,
+            metrics=metrics,
+            filters=filters,
+            final_limit=final_limit,
+            per_query_limit=per_query_limit,
+            min_topic_authority=min_topic_authority,
+        )
+
+        refreshed_at = datetime.utcnow()
+
+        await db.execute(delete(RisingVoice))
+        for row in rising_rows:
+            db.add(
+                RisingVoice(
+                    rank=row["rank"],
+                    channel_id=row["channel_id"],
+                    name=row["name"],
+                    slug=row["slug"],
+                    host=row["host"],
+                    subscriber_count=row["subscriber_count"],
+                    growth_signal=row["growth_signal"],
+                    credibility_score=row["credibility_score"],
+                    topic_authority_score=row["topic_authority_score"],
+                    communication_score=row["communication_score"],
+                    freshness_score=row["freshness_score"],
+                    growth_score=row["growth_score"],
+                    overall_score=row["overall_score"],
+                    tags=row["tags"],
+                    channel_url=row["channel_url"],
+                    last_scored=row["last_scored"],
+                    matched_queries=row["matched_queries"],
+                    refreshed_at=refreshed_at,
+                )
+            )
+
+        await db.commit()
+
+        return {
+            "count": len(rising_rows),
+            "refreshed_at": refreshed_at,
+        }
     
     async def get_creator_detail(
         self,
