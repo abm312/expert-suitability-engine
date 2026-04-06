@@ -38,7 +38,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    dockerCommand: alembic upgrade head && python scripts/refresh_rising_voices_job.py
+    dockerCommand: sh -lc "alembic upgrade head && python scripts/refresh_rising_voices_job.py"
     region: oregon
     plan: starter
     schedule: "0 7 * * *"
