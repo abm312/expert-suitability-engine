@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 import re
 import logging
@@ -713,6 +713,15 @@ class CreatorService:
         min_topic_authority: float,
     ) -> Dict[str, Any]:
         """Recompute and store the Rising AI Voices snapshot."""
+        existing_count_result = await db.execute(
+            select(func.count()).select_from(RisingVoice)
+        )
+        existing_count = int(existing_count_result.scalar() or 0)
+        logger.info(
+            "   ↳ Refreshing Rising AI Voices snapshot (existing_count=%s)",
+            existing_count,
+        )
+
         rising_rows = await self.build_rising_voices_rows(
             db=db,
             queries=queries,
@@ -722,6 +731,15 @@ class CreatorService:
             per_query_limit=per_query_limit,
             min_topic_authority=min_topic_authority,
         )
+
+        if not rising_rows:
+            logger.error(
+                "   ❌ Rising voices refresh produced 0 rows; preserving existing snapshot (existing_count=%s)",
+                existing_count,
+            )
+            raise RuntimeError(
+                f"Rising voices refresh produced 0 rows; existing snapshot count={existing_count}"
+            )
 
         refreshed_at = datetime.utcnow()
 

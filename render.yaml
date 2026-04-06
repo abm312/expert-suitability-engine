@@ -38,7 +38,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    dockerCommand: sh scripts/run_rising_voices_refresh.sh
+    dockerCommand: sh /app/scripts/run_rising_voices_refresh.sh
     region: oregon
     plan: starter
     schedule: "0 7 * * *"
