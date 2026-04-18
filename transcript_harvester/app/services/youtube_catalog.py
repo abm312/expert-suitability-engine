@@ -189,6 +189,17 @@ class YouTubeCatalogService:
         )
         return final_videos
 
+    def get_videos_by_ids(self, video_ids: list[str]) -> list[dict[str, str]]:
+        if not video_ids:
+            return []
+
+        logger.info("Loading explicit video set count=%s", len(video_ids))
+        loaded = self._get_video_details(video_ids)
+        by_id = {video["video_id"]: video for video in loaded}
+        ordered = [by_id[video_id] for video_id in video_ids if video_id in by_id]
+        logger.info("Loaded explicit video set resolved_count=%s", len(ordered))
+        return ordered
+
     def _get_video_details(self, video_ids: list[str]) -> list[dict[str, str]]:
         logger.info("Loading video details for %s video ids", len(video_ids))
         try:

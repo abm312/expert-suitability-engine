@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   SearchBar, 
@@ -176,14 +177,19 @@ export default function Home() {
                 <p className="text-xs text-gray-500">YouTube Expert Discovery</p>
               </div>
             </button>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 text-gray-400 hover:text-gray-200 transition-colors"
-            >
-              <Github className="w-5 h-5" />
-            </a>
+            <div className="flex items-center gap-2">
+              <Link href="/role-transcripts" className="btn-secondary text-sm px-4 py-2">
+                Role Transcript Dumps
+              </Link>
+              <a
+                href="https://github.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                <Github className="w-5 h-5" />
+              </a>
+            </div>
           </div>
         </div>
       </header>

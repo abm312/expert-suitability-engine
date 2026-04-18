@@ -138,6 +138,53 @@ export interface CommunicationAnalysisResponse {
   videos: CommunicationVideoAnalysis[];
 }
 
+export interface RoleTranscriptBuildRequest {
+  roleQuery: string;
+  topChannels?: number;
+  videosPerChannel?: number;
+  minDurationMinutes?: number;
+}
+
+export interface RoleTranscriptVideo {
+  videoId: string;
+  title: string;
+  videoUrl: string;
+  publishedAt?: string | null;
+  durationSeconds: number;
+  transcriptStatus: string;
+  transcriptLanguage?: string | null;
+  transcriptError?: string | null;
+  segmentCount: number;
+  transcriptText?: string | null;
+  fetchedFromCache: boolean;
+}
+
+export interface RoleTranscriptChannel {
+  rank: number;
+  channelId: string;
+  channelName: string;
+  channelUrl: string;
+  overallScore: number;
+  topicMatchSummary: string;
+  transcriptsFound: number;
+  selectedVideoCount: number;
+  videos: RoleTranscriptVideo[];
+}
+
+export interface RoleTranscriptDumpResponse {
+  roleQuery: string;
+  roleSlug: string;
+  searchQueryUsed: string;
+  channelCount: number;
+  transcriptCount: number;
+  topChannels: number;
+  videosPerChannel: number;
+  minDurationMinutes: number;
+  createdAt: string;
+  refreshedAt: string;
+  expertChannels: RoleTranscriptChannel[];
+}
+
 export interface MetricInfo {
   id: MetricType;
   name: string;

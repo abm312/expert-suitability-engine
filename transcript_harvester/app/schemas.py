@@ -31,6 +31,14 @@ class TranscriptDumpRequest(BaseModel):
         return self
 
 
+class TranscriptVideoDumpRequest(BaseModel):
+    channel_id: str
+    video_ids: list[str] = Field(min_length=1, max_length=50)
+    languages: list[str] = Field(default_factory=lambda: ["en"])
+    refresh: bool = False
+    persist_dump_file: bool = False
+
+
 class TranscriptSegment(BaseModel):
     text: str
     start: float = 0.0

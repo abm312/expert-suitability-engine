@@ -4,6 +4,8 @@ import {
   CreatorCard,
   TranscriptDumpResponse,
   CommunicationAnalysisResponse,
+  RoleTranscriptBuildRequest,
+  RoleTranscriptDumpResponse,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://ese-backend-61as.onrender.com/api/v1';
@@ -326,6 +328,40 @@ export const api = {
     const filename = parseDownloadFilename(
       response.headers.get('Content-Disposition'),
       fallbackName
+    );
+
+    return { blob, filename };
+  },
+
+  buildRoleTranscriptDump: (request: RoleTranscriptBuildRequest) =>
+    fetchAPI<RoleTranscriptDumpResponse>('/role-transcripts/build', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  getRoleTranscriptDump: (roleSlug: string) =>
+    fetchAPI<RoleTranscriptDumpResponse>(`/role-transcripts/${encodeURIComponent(roleSlug)}`),
+
+  downloadRoleTranscriptDump: async (roleSlug: string) => {
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/role-transcripts/${encodeURIComponent(roleSlug)}/download`);
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new APIError(0, 'Cannot connect to server. Make sure the backend is running on port 8000.');
+      }
+      throw err;
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Role transcript dump download failed' }));
+      throw new APIError(response.status, error.detail || 'Role transcript dump download failed');
+    }
+
+    const blob = await response.blob();
+    const filename = parseDownloadFilename(
+      response.headers.get('Content-Disposition'),
+      `${roleSlug}-transcript-dump.json`
     );
 
     return { blob, filename };

@@ -127,3 +127,17 @@ class RisingVoice(Base):
     last_scored = Column(Date, nullable=False)
     matched_queries = Column(JSON, default=list)
     refreshed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RoleTranscriptDump(Base):
+    __tablename__ = "role_transcript_dumps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    role_slug = Column(String(255), unique=True, nullable=False, index=True)
+    role_query = Column(String(255), nullable=False)
+    search_query_used = Column(String(255), nullable=False)
+    channel_count = Column(Integer, nullable=False, default=0)
+    transcript_count = Column(Integer, nullable=False, default=0)
+    dump_json = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    refreshed_at = Column(DateTime, default=datetime.utcnow, nullable=False)

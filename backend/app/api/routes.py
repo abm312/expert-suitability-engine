@@ -23,7 +23,9 @@ from app.core.rising_voices import (
 from app.schemas.search import SearchRequest, DiscoverRequest, FilterConfig, MetricConfig, MetricType
 from app.schemas.creator import CreatorResponse, CreatorDetail
 from app.schemas.rising_voices import RisingVoiceResponse, RisingVoicesRefreshResponse, RisingVoiceScoreBreakdown
+from app.schemas.role_transcript import RoleTranscriptBuildRequest, RoleTranscriptDumpResponse
 from app.services.creator_service import CreatorService
+from app.services.role_transcript_service import RoleTranscriptService
 
 # Configure logging
 logging.basicConfig(
@@ -34,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 creator_service = CreatorService()
+role_transcript_service = RoleTranscriptService()
 settings = get_settings()
 
 CURATED_EXPORT_QUERIES = [
@@ -71,6 +74,62 @@ async def health_check():
 async def get_progress():
     """Get current search progress"""
     return search_progress
+
+
+@router.post("/role-transcripts/build", response_model=RoleTranscriptDumpResponse)
+async def build_role_transcript_dump(
+    request: RoleTranscriptBuildRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Build or refresh the canonical role transcript dump."""
+    logger.info(
+        "🧾 ROLE TRANSCRIPT BUILD REQUEST role='%s' top_channels=%s videos_per_channel=%s min_duration=%s",
+        request.roleQuery,
+        request.topChannels,
+        request.videosPerChannel,
+        request.minDurationMinutes,
+    )
+    try:
+        return await role_transcript_service.build_dump(db, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("❌ ROLE TRANSCRIPT BUILD FAILED: %s", exc)
+        logger.error("Full traceback:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/role-transcripts/{role_slug}", response_model=RoleTranscriptDumpResponse)
+async def get_role_transcript_dump(
+    role_slug: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Load the latest stored transcript dump for a role."""
+    dump = await role_transcript_service.get_dump(db, role_slug)
+    if not dump:
+        raise HTTPException(status_code=404, detail=f"No transcript dump found for '{role_slug}'")
+    return dump
+
+
+@router.get("/role-transcripts/{role_slug}/download")
+async def download_role_transcript_dump(
+    role_slug: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the latest stored transcript dump as JSON."""
+    payload = await role_transcript_service.download_dump_payload(db, role_slug)
+    if not payload:
+        raise HTTPException(status_code=404, detail=f"No transcript dump found for '{role_slug}'")
+
+    json_payload = json.dumps(payload, indent=2)
+    filename = f"{role_slug}-transcript-dump.json"
+    return StreamingResponse(
+        iter([json_payload]),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 def update_progress(status: str, step: str, details: str = ""):

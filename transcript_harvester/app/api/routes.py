@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from app.core.config import get_settings
-from app.schemas import TranscriptDumpRequest, TranscriptDumpResponse
+from app.schemas import TranscriptDumpRequest, TranscriptDumpResponse, TranscriptVideoDumpRequest
 from app.services.communication_analyzer import CommunicationAnalyzer
 from app.services.harvest_service import HarvestService
 
@@ -58,6 +58,30 @@ def create_transcript_dump(request: TranscriptDumpRequest):
         return dump
     except Exception as exc:
         logger.exception("Transcript dump request failed: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/transcripts/videos")
+def create_selected_video_transcript_dump(request: TranscriptVideoDumpRequest):
+    logger.info(
+        "Selected-video transcript dump request received channel_id=%s video_count=%s languages=%s refresh=%s",
+        request.channel_id,
+        len(request.video_ids),
+        request.languages,
+        request.refresh,
+    )
+    try:
+        dump = service.fetch_selected_video_transcript_dump(request)
+        logger.info(
+            "Selected-video transcript dump completed channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
+            dump.channel_id,
+            dump.channel_name,
+            dump.transcripts_found,
+            len(dump.videos),
+        )
+        return dump
+    except Exception as exc:
+        logger.exception("Selected-video transcript dump request failed: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

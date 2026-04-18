@@ -7,7 +7,12 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.config import Settings
-from app.schemas import TranscriptDumpRequest, TranscriptDumpResponse, TranscriptVideoItem
+from app.schemas import (
+    TranscriptDumpRequest,
+    TranscriptDumpResponse,
+    TranscriptVideoDumpRequest,
+    TranscriptVideoItem,
+)
 from app.services.transcript_fetcher import TranscriptFetcher
 from app.services.youtube_catalog import YouTubeCatalogService
 from app.store import SQLiteStore
@@ -65,11 +70,149 @@ class HarvestService:
         self.store.upsert_channel(channel)
         self.store.upsert_videos(channel["channel_id"], videos)
 
+        items = self._collect_transcript_items(videos, request.languages, request.refresh)
+
+        response = TranscriptDumpResponse(
+            channel_id=channel["channel_id"],
+            channel_name=channel["channel_name"],
+            requested_at=datetime.utcnow(),
+            max_videos=request.max_videos,
+            languages=request.languages,
+            transcripts_found=sum(1 for item in items if item.transcript_status == "fetched"),
+            videos=items,
+        )
+
+        if request.persist_dump_file:
+            dump_path = self.persist_dump(response)
+            response.dump_file = str(dump_path)
+            logger.info(
+                "Transcript dump persisted channel_id=%s path=%s",
+                response.channel_id,
+                response.dump_file,
+            )
+
+        logger.info(
+            "Transcript dump finished channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
+            response.channel_id,
+            response.channel_name,
+            response.transcripts_found,
+            len(response.videos),
+        )
+
+        return response
+
+    def fetch_selected_video_transcript_dump(
+        self, request: TranscriptVideoDumpRequest
+    ) -> TranscriptDumpResponse:
+        logger.info(
+            "Starting selected-video transcript dump channel_id=%s video_count=%s languages=%s refresh=%s provider=%s",
+            request.channel_id,
+            len(request.video_ids),
+            request.languages,
+            request.refresh,
+            self.transcripts.provider,
+        )
+        channel = self.youtube.resolve_channel(channel_id=request.channel_id)
+        logger.info(
+            "Resolved channel for selected-video dump channel_id=%s channel_name=%s",
+            channel["channel_id"],
+            channel["channel_name"],
+        )
+        videos = self.youtube.get_videos_by_ids(request.video_ids)
+        logger.info(
+            "Loaded selected videos channel_id=%s requested_count=%s actual_count=%s",
+            channel["channel_id"],
+            len(request.video_ids),
+            len(videos),
+        )
+
+        self.store.upsert_channel(channel)
+        self.store.upsert_videos(channel["channel_id"], videos)
+
+        items = self._collect_transcript_items(videos, request.languages, request.refresh)
+
+        response = TranscriptDumpResponse(
+            channel_id=channel["channel_id"],
+            channel_name=channel["channel_name"],
+            requested_at=datetime.utcnow(),
+            max_videos=len(request.video_ids),
+            languages=request.languages,
+            transcripts_found=sum(1 for item in items if item.transcript_status == "fetched"),
+            videos=items,
+        )
+
+        if request.persist_dump_file:
+            dump_path = self.persist_dump(response)
+            response.dump_file = str(dump_path)
+            logger.info(
+                "Selected-video transcript dump persisted channel_id=%s path=%s",
+                response.channel_id,
+                response.dump_file,
+            )
+
+        logger.info(
+            "Selected-video transcript dump finished channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
+            response.channel_id,
+            response.channel_name,
+            response.transcripts_found,
+            len(response.videos),
+        )
+        return response
+
+    def get_cached_transcripts(self, channel_id: str, max_videos: int) -> TranscriptDumpResponse:
+        logger.info(
+            "Loading cached transcripts channel_id=%s max_videos=%s",
+            channel_id,
+            max_videos,
+        )
+        channel_name = self.store.get_channel_name(channel_id)
+        if not channel_name:
+            raise ValueError(f"Channel '{channel_id}' is not cached yet")
+
+        items = [
+            TranscriptVideoItem(**item, fetched_from_cache=bool(item.get("transcript_text")))
+            for item in self.store.get_cached_channel_transcripts(channel_id, max_videos)
+        ]
+
+        response = TranscriptDumpResponse(
+            channel_id=channel_id,
+            channel_name=channel_name,
+            requested_at=datetime.utcnow(),
+            max_videos=max_videos,
+            languages=self.settings.DEFAULT_LANGUAGES,
+            transcripts_found=sum(1 for item in items if item.transcript_status == "fetched"),
+            videos=items,
+        )
+        logger.info(
+            "Loaded cached transcripts channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
+            response.channel_id,
+            response.channel_name,
+            response.transcripts_found,
+            len(response.videos),
+        )
+        return response
+
+    def persist_dump(self, response: TranscriptDumpResponse) -> Path:
+        slug = self._slugify(response.channel_name)
+        timestamp = response.requested_at.strftime("%Y%m%dT%H%M%S")
+        path = Path(self.settings.OUTPUT_DIR) / f"{slug}-{timestamp}.json"
+        path.write_text(
+            json.dumps(response.model_dump(mode="json"), indent=2),
+            encoding="utf-8",
+        )
+        return path
+
+    def _collect_transcript_items(
+        self,
+        videos: list[dict[str, str]],
+        languages: list[str],
+        refresh: bool,
+    ) -> list[TranscriptVideoItem]:
         items: list[TranscriptVideoItem] = []
         for video in videos:
             cached = (
                 None
-                if request.refresh
+                if refresh
                 else self.store.get_cached_transcript(
                     video["video_id"],
                     missing_ttl_seconds=self.settings.MISSING_TRANSCRIPT_CACHE_SECONDS,
@@ -98,9 +241,9 @@ class HarvestService:
                     video["video_id"],
                     video["title"],
                     self.transcripts.provider,
-                    request.languages,
+                    languages,
                 )
-                transcript = self.transcripts.fetch(video["video_id"], request.languages)
+                transcript = self.transcripts.fetch(video["video_id"], languages)
                 self.store.save_transcript(video["video_id"], transcript, attempted_at)
                 logger.info(
                     "Transcript fetch success video_id=%s language=%s segment_count=%s word_count=%s generated=%s",
@@ -150,77 +293,7 @@ class HarvestService:
                     )
                 )
 
-        response = TranscriptDumpResponse(
-            channel_id=channel["channel_id"],
-            channel_name=channel["channel_name"],
-            requested_at=datetime.utcnow(),
-            max_videos=request.max_videos,
-            languages=request.languages,
-            transcripts_found=sum(1 for item in items if item.transcript_status == "fetched"),
-            videos=items,
-        )
-
-        if request.persist_dump_file:
-            dump_path = self.persist_dump(response)
-            response.dump_file = str(dump_path)
-            logger.info(
-                "Transcript dump persisted channel_id=%s path=%s",
-                response.channel_id,
-                response.dump_file,
-            )
-
-        logger.info(
-            "Transcript dump finished channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
-            response.channel_id,
-            response.channel_name,
-            response.transcripts_found,
-            len(response.videos),
-        )
-
-        return response
-
-    def get_cached_transcripts(self, channel_id: str, max_videos: int) -> TranscriptDumpResponse:
-        logger.info(
-            "Loading cached transcripts channel_id=%s max_videos=%s",
-            channel_id,
-            max_videos,
-        )
-        channel_name = self.store.get_channel_name(channel_id)
-        if not channel_name:
-            raise ValueError(f"Channel '{channel_id}' is not cached yet")
-
-        items = [
-            TranscriptVideoItem(**item, fetched_from_cache=bool(item.get("transcript_text")))
-            for item in self.store.get_cached_channel_transcripts(channel_id, max_videos)
-        ]
-
-        response = TranscriptDumpResponse(
-            channel_id=channel_id,
-            channel_name=channel_name,
-            requested_at=datetime.utcnow(),
-            max_videos=max_videos,
-            languages=self.settings.DEFAULT_LANGUAGES,
-            transcripts_found=sum(1 for item in items if item.transcript_status == "fetched"),
-            videos=items,
-        )
-        logger.info(
-            "Loaded cached transcripts channel_id=%s channel_name=%s transcripts_found=%s total_videos=%s",
-            response.channel_id,
-            response.channel_name,
-            response.transcripts_found,
-            len(response.videos),
-        )
-        return response
-
-    def persist_dump(self, response: TranscriptDumpResponse) -> Path:
-        slug = self._slugify(response.channel_name)
-        timestamp = response.requested_at.strftime("%Y%m%dT%H%M%S")
-        path = Path(self.settings.OUTPUT_DIR) / f"{slug}-{timestamp}.json"
-        path.write_text(
-            json.dumps(response.model_dump(mode="json"), indent=2),
-            encoding="utf-8",
-        )
-        return path
+        return items
 
     @staticmethod
     def _slugify(value: str) -> str:

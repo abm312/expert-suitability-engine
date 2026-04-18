@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     RISING_VOICES_FINAL_LIMIT: int = 15
     RISING_VOICES_PER_QUERY_LIMIT: int = 10
     RISING_VOICES_MIN_TOPIC_AUTHORITY: float = 0.7
+
+    # Transcript dump MVP
+    TRANSCRIPT_SERVICE_URL: str = "http://127.0.0.1:8100/api/v1"
     
     class Config:
         env_file = ".env"
